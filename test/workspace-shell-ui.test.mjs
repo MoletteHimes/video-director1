@@ -29,5 +29,21 @@ test("library admin can copy an item into a new editable draft", async () => {
   assert.match(librarySource, /type AdminMode = "idle" \| "edit" \| "copy" \| "delete"/);
   assert.match(librarySource, /createKnowledgeItemCopyDraft/);
   assert.match(librarySource, /mode === "copy"/);
-  assert.match(librarySource, /<Copy className="h-4 w-4" \/> 复制/);
+  assert.match(librarySource, /<Copy className="h-4 w-4" \/>/);
+});
+
+test("front library pages do not expose an admin login button", async () => {
+  const librarySource = await readFile(join(process.cwd(), "components", "LibraryClient.tsx"), "utf8");
+  const adminLibrarySource = await readFile(join(process.cwd(), "components", "AdminLibraryClient.tsx"), "utf8");
+
+  assert.doesNotMatch(librarySource, /LogIn/);
+  assert.doesNotMatch(librarySource, /setLoginOpen/);
+  assert.doesNotMatch(librarySource, /function LoginModal/);
+  assert.match(librarySource, /fetch\("\/api\/admin\/session"\)/);
+  assert.match(librarySource, /<Edit3 className="h-4 w-4" \/>/);
+  assert.match(librarySource, /<PlusCircle className="h-4 w-4" \/>/);
+  assert.match(librarySource, /deleteChecked/);
+
+  assert.match(adminLibrarySource, /\/api\/admin\/login/);
+  assert.match(adminLibrarySource, /Local Admin/);
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Film, Layers, Sparkles, Wand2 } from "lucide-react";
+import { Camera, Film, FolderOpen, Layers, Sparkles, Wand2 } from "lucide-react";
 import { usePathname, useSearchParams } from "next/navigation";
 
 type NavItem = {
@@ -12,6 +12,7 @@ type NavItem = {
 
 const nav: NavItem[] = [
   { href: "/dashboard", name: "工作台", icon: Sparkles },
+  { href: "/projects", name: "我的项目", icon: FolderOpen },
   { href: "/library?type=transition", name: "转场", icon: Layers, type: "transition" },
   { href: "/library?type=shot", name: "景别", icon: Camera, type: "shot" },
   { href: "/library?type=camera_movement", name: "运镜", icon: Film, type: "camera_movement" },

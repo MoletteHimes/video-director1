@@ -9,6 +9,7 @@ const root = process.cwd();
 const compiledDir = join(root, ".next-test");
 const genreOptionsPath = join(compiledDir, "genre-options.mjs");
 const libraryStorePath = join(compiledDir, "library-store-genre.mjs");
+const knowledgeGenrePath = join(compiledDir, "knowledge-genre.mjs");
 
 async function compileModule(sourcePath, outputPath, replacements = []) {
   let source = await readFile(sourcePath, "utf8");
@@ -53,8 +54,8 @@ test("genre options include the approved single-choice material genres", async (
 });
 
 test("library search can match a material by genre", async () => {
-  await compileModule(join(root, "lib", "knowledge.ts"), join(compiledDir, "knowledge.mjs"));
-  await compileModule(join(root, "lib", "library-store.ts"), libraryStorePath, [["./knowledge", "./knowledge.mjs"]]);
+  await compileModule(join(root, "lib", "knowledge.ts"), knowledgeGenrePath);
+  await compileModule(join(root, "lib", "library-store.ts"), libraryStorePath, [["./knowledge", "./knowledge-genre.mjs"]]);
   const moduleUrl = pathToFileURL(libraryStorePath).href;
   const { filterKnowledgeItems } = await import(moduleUrl);
   const items = [

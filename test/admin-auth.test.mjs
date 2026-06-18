@@ -24,6 +24,16 @@ async function compileModule(sourcePath, outputPath) {
 await mkdir(compiledDir, { recursive: true });
 await compileModule(join(process.cwd(), "lib", "admin-auth.ts"), modulePath);
 
+test("admin auth does not keep hardcoded default credentials", async () => {
+  const authSource = await readFile(join(process.cwd(), "lib", "admin-auth.ts"), "utf8");
+  const loginRouteSource = await readFile(join(process.cwd(), "app", "api", "admin", "login", "route.ts"), "utf8");
+
+  assert.doesNotMatch(authSource, /157990|DEFAULT_ADMIN_PASSWORD|DEFAULT_ADMIN_USERNAME/);
+  assert.doesNotMatch(loginRouteSource, /DEFAULT_ADMIN_PASSWORD|DEFAULT_ADMIN_USERNAME/);
+  assert.match(loginRouteSource, /ADMIN_LIBRARY_USERNAME/);
+  assert.match(loginRouteSource, /ADMIN_LIBRARY_PASSWORD/);
+});
+
 test("admin auth allows local use when no token is configured", async () => {
   const { isAdminRequestAuthorized } = await import(moduleUrl);
   const previousNodeEnv = process.env.NODE_ENV;

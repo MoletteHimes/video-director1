@@ -15,6 +15,14 @@ type StoryboardImageState = {
   panels: Record<number, string>;
 };
 
+type ProjectSaveState = {
+  saved?: boolean;
+  projectId?: string;
+  versionId?: string;
+  versionNumber?: number;
+  reason?: string;
+};
+
 type BatchPromptSection = {
   segment: PromptSegment;
   result: AnalysisResult;
@@ -321,6 +329,8 @@ export function DashboardClient() {
   const [batchResults, setBatchResults] = useState<BatchPromptSection[]>([]);
   const [libraryItems, setLibraryItems] = useState<KnowledgeItem[]>([]);
   const [storyboardImage, setStoryboardImage] = useState<StoryboardImageState | null>(null);
+  const [projectSave, setProjectSave] = useState<ProjectSaveState | null>(null);
+  const [resumeProjectId, setResumeProjectId] = useState("");
   const [selectedShot, setSelectedShot] = useState<StoryboardShot | null>(null);
   const [referenceShot, setReferenceShot] = useState<StoryboardShot | null>(null);
   const [selectedLibraryItem, setSelectedLibraryItem] = useState<KnowledgeItem | null>(null);
@@ -353,15 +363,27 @@ export function DashboardClient() {
     };
   }, []);
 
+  useEffect(() => {
+    const resumeScript = window.localStorage.getItem("vd_resume_script");
+    const resumeProject = window.localStorage.getItem("vd_resume_project_id");
+    if (resumeScript) {
+      setScript(resumeScript);
+      setResumeProjectId(resumeProject || "");
+      setGenerationProgress(resumeProject ? "已载入历史项目，可修改后重新生成新版本。" : "已载入历史文案，可继续编辑。");
+      window.localStorage.removeItem("vd_resume_script");
+      window.localStorage.removeItem("vd_resume_project_id");
+    }
+  }, []);
+
   async function requestAnalysis(inputScript: string, inputDurationSeconds: number) {
     const res = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ script: inputScript, duration: `${inputDurationSeconds}秒`, save: false }),
+      body: JSON.stringify({ script: inputScript, projectId: resumeProjectId || undefined, duration: `${inputDurationSeconds}秒`, save: true }),
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
-    return data.result as AnalysisResult;
+    return { result: data.result as AnalysisResult, save: (data.save || null) as ProjectSaveState | null };
   }
 
   async function handlePromptFileUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -372,6 +394,7 @@ export function DashboardClient() {
     setUploadingText(true);
     setError("");
     setResult(null);
+    setProjectSave(null);
     setBatchResults([]);
     setGenerationProgress("正在读取文案...");
 
@@ -412,6 +435,7 @@ export function DashboardClient() {
     setSelectedShot(null);
     setReferenceShot(null);
     setSelectedLibraryItem(null);
+    setProjectSave(null);
     setDurationPickerOpen(false);
     setBatchResults([]);
 
@@ -423,7 +447,10 @@ export function DashboardClient() {
 
         for (const segment of segments) {
           setGenerationProgress(`正在生成第 ${segment.index} / ${segments.length} 段...`);
-          const segmentResult = await requestAnalysis(segment.text, 15);
+          const analysis = await requestAnalysis(segment.text, 15);
+          const segmentResult = analysis.result;
+          setProjectSave(analysis.save);
+          if (analysis.save?.projectId) setResumeProjectId(analysis.save.projectId);
           completed.push({
             segment,
             result: segmentResult,
@@ -438,7 +465,10 @@ export function DashboardClient() {
       }
 
       setGenerationProgress("正在生成...");
-      const singleResult = await requestAnalysis(script, durationSeconds);
+      const analysis = await requestAnalysis(script, durationSeconds);
+      const singleResult = analysis.result;
+      setProjectSave(analysis.save);
+      if (analysis.save?.projectId) setResumeProjectId(analysis.save.projectId);
       setResult(singleResult);
       setGenerationProgress("生成完成。");
     } catch (err: any) {
@@ -494,6 +524,24 @@ export function DashboardClient() {
     URL.revokeObjectURL(url);
   }
 
+  async function saveStoryboardImageReference(storyboardImageUrl: string, storyboardImagePrompt?: string) {
+    if (!projectSave?.saved || !projectSave.projectId || !projectSave.versionId) return "";
+
+    const res = await fetch("/api/projects/storyboard-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId: projectSave.projectId,
+        versionId: projectSave.versionId,
+        storyboardImageUrl,
+        storyboardImagePrompt,
+      }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "分镜图保存失败");
+    return typeof data.storyboardImageUrl === "string" ? data.storyboardImageUrl : "";
+  }
+
   async function generateStoryboardImage() {
     if (!result) return;
 
@@ -515,7 +563,8 @@ export function DashboardClient() {
       if (!data.ok) throw new Error(data.error);
 
       const panels = normalizeStoryboardPanels(data.panels) || await cropStoryboardPanels(data.imageUrl, result.storyboard);
-      setStoryboardImage({ sheetUrl: data.imageUrl, prompt: data.prompt, panels });
+      const savedStoryboardImageUrl = await saveStoryboardImageReference(data.imageUrl, data.prompt);
+      setStoryboardImage({ sheetUrl: savedStoryboardImageUrl || data.imageUrl, prompt: data.prompt, panels });
     } catch (err: any) {
       setImageError(err.message || "参考分镜图生成失败");
     } finally {

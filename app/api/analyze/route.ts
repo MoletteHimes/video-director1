@@ -1,8 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { analyzeScript } from "@/lib/ai";
-import { createClient } from "@/lib/supabase-server";
-import { saveProject } from "@/lib/project-store";
+import { saveAnalysisProjectToNest } from "@/lib/nest-projects-proxy";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { createRequestId, durationSince, logger } from "@/lib/logger";
 
@@ -10,6 +9,7 @@ export const runtime = "nodejs";
 
 const RequestSchema = z.object({
   script: z.string().min(5).max(12000),
+  projectId: z.string().uuid().optional(),
   contentType: z.string().default("自动识别"),
   style: z.string().default("自动匹配文案气质"),
   duration: z.string().default("15秒"),
@@ -17,7 +17,7 @@ const RequestSchema = z.object({
   save: z.boolean().optional().default(false),
 });
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   const requestId = createRequestId("analyze");
   const startedAt = Date.now();
   const route = "/api/analyze";
@@ -46,10 +46,7 @@ export async function POST(request: Request) {
 
     let saveMeta: any = { saved: false };
     if (body.save) {
-      const supabase = await createClient();
-      const userRes = supabase ? await supabase.auth.getUser() : null;
-      const userId = userRes?.data?.user?.id;
-      saveMeta = await saveProject({ userId, originalScript: body.script, result });
+      saveMeta = await saveAnalysisProjectToNest(request, body.script, result, body.projectId);
     }
 
     logger.info("api_request_completed", {

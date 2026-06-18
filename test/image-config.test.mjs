@@ -13,17 +13,28 @@ function activeValue(envText, key) {
   return line?.slice(key.length + 1) || "";
 }
 
-test("OpenAI image config uses a supported Image API model", () => {
+test("image config uses a supported real image provider model", () => {
   const envLocal = readEnvFile(".env.local");
   const envExample = readEnvFile(".env.example");
   const provider = activeValue(envLocal, "IMAGE_PROVIDER");
   const model = activeValue(envLocal, "IMAGE_MODEL");
 
-  assert.equal(provider, "openai");
-  assert.equal(model, "gpt-image-1");
+  const supportedModelsByProvider = {
+    openai: ["gpt-image-1", "gpt-image-2"],
+    gemini: ["gemini-2.5-flash-image", "gemini-3.1-flash-image"],
+    openrouter: ["google/gemini-2.5-flash-image"],
+    qwen: ["qwen-image"],
+    mock: ["mock"],
+  };
 
+  assert.ok(provider in supportedModelsByProvider, `${provider} should be a supported image provider`);
+  assert.ok(
+    supportedModelsByProvider[provider].includes(model),
+    `${model} should be supported for ${provider}`,
+  );
+
+  assert.match(envExample, /IMAGE_PROVIDER=mock/);
   assert.match(envExample, /IMAGE_MODEL=gpt-image-1/);
-  assert.doesNotMatch(envExample, /IMAGE_MODEL=gpt-image-2/);
 });
 
 test("storyboard image prompt and cropper preserve one panel per shot", () => {

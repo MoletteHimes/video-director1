@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import {
   ADMIN_SESSION_COOKIE,
-  DEFAULT_ADMIN_PASSWORD,
-  DEFAULT_ADMIN_USERNAME,
   createAdminSessionCookie,
 } from "@/lib/admin-auth";
 
@@ -12,8 +10,12 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const username = String(body.username || "").trim();
   const password = String(body.password || "");
-  const expectedPassword = process.env.ADMIN_LIBRARY_PASSWORD || DEFAULT_ADMIN_PASSWORD;
-  const expectedUsername = process.env.ADMIN_LIBRARY_USERNAME || DEFAULT_ADMIN_USERNAME;
+  const expectedPassword = process.env.ADMIN_LIBRARY_PASSWORD || "";
+  const expectedUsername = process.env.ADMIN_LIBRARY_USERNAME || "";
+
+  if (!expectedUsername || !expectedPassword) {
+    return NextResponse.json({ ok: false, error: "后台账号未配置" }, { status: 500 });
+  }
 
   if (username !== expectedUsername || password !== expectedPassword) {
     return NextResponse.json({ ok: false, error: "账号或密码不正确" }, { status: 401 });

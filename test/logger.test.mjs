@@ -29,7 +29,7 @@ test("logger sanitizes sensitive fields recursively", async () => {
 
   const sanitized = sanitizeLogValue({
     username: "admin",
-    password: "157990",
+    password: "example-password",
     nested: {
       apiKey: "secret-key",
       cookie: "session=value",

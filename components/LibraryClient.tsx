@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Copy, Edit3, LogIn, LogOut, PlusCircle, Save, Search, Trash2, UploadCloud, X } from "lucide-react";
+import { Copy, Edit3, LogOut, PlusCircle, Save, Search, Trash2, UploadCloud, X } from "lucide-react";
 import { Drawer } from "@/components/Drawer";
 import { LibraryCard } from "@/components/LibraryCard";
 import { PreviewAnimation } from "@/components/PreviewAnimation";
@@ -258,57 +258,6 @@ function EditModal({
   );
 }
 
-function LoginModal({ onClose, onLoggedIn }: { onClose: () => void; onLoggedIn: () => void }) {
-  const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setLoading(true);
-    setMessage("");
-    const formData = new FormData(event.currentTarget);
-    try {
-      const res = await fetch("/api/admin/login", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ username: formData.get("username"), password: formData.get("password") }),
-      });
-      const data = await readJsonResponse(res);
-      if (!res.ok || !data.ok) throw new Error(data.error || "登录失败");
-      onLoggedIn();
-      onClose();
-    } catch (error: any) {
-      setMessage(error.message || "登录失败");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" onClick={onClose}>
-      <form onSubmit={onSubmit} className="w-full max-w-md rounded-2xl border border-cyan-300/20 bg-slate-950 p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-        <div className="mb-5 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase text-cyan-200/70">Admin Login</p>
-            <h2 className="mt-1 text-2xl font-black text-white">登录后台</h2>
-          </div>
-          <button type="button" onClick={onClose} className="rounded-xl border border-white/10 p-2 text-slate-300 transition hover:bg-white/10">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <div className="space-y-3">
-          <input name="username" defaultValue="admin" className="control-input w-full rounded-xl px-3 py-3 text-sm" placeholder="账号" autoComplete="username" />
-          <input name="password" type="password" className="control-input w-full rounded-xl px-3 py-3 text-sm" placeholder="密码" autoComplete="current-password" />
-        </div>
-        {message && <p className="mt-3 rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-100">{message}</p>}
-        <button type="submit" disabled={loading} className="primary-neon mt-4 w-full rounded-xl px-5 py-3 font-bold disabled:opacity-60">
-          {loading ? "登录中..." : "登录"}
-        </button>
-      </form>
-    </div>
-  );
-}
-
 export function LibraryClient({ initialItems, type }: { initialItems: KnowledgeItem[]; type?: KnowledgeType }) {
   const [items, setItems] = useState(initialItems);
   const [query, setQuery] = useState("");
@@ -317,7 +266,6 @@ export function LibraryClient({ initialItems, type }: { initialItems: KnowledgeI
   const [authenticated, setAuthenticated] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [mode, setMode] = useState<AdminMode>("idle");
-  const [loginOpen, setLoginOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<KnowledgeItem | null>(null);
   const [editingIntent, setEditingIntent] = useState<EditIntent>("edit");
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
@@ -448,11 +396,7 @@ export function LibraryClient({ initialItems, type }: { initialItems: KnowledgeI
 
           <div className="flex flex-wrap items-center gap-2">
             {message && <span className="rounded-lg border border-cyan-300/16 bg-cyan-300/8 px-3 py-2 text-xs text-cyan-100">{message}</span>}
-            {!authenticated ? (
-              <button onClick={() => setLoginOpen(true)} className="primary-neon inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold">
-                <LogIn className="h-4 w-4" /> 登录
-              </button>
-            ) : (
+            {authenticated && (
               <>
                 <button
                   onClick={() => {
@@ -528,7 +472,6 @@ export function LibraryClient({ initialItems, type }: { initialItems: KnowledgeI
       </div>
 
       <Drawer item={selected} onClose={() => setSelected(null)} />
-      {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} onLoggedIn={() => setAuthenticated(true)} />}
       {editingItem && (
         <EditModal
           item={editingItem}

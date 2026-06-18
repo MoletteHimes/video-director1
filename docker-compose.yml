@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: video-director-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: video_director
+      POSTGRES_USER: video_director
+      POSTGRES_PASSWORD: video_director_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - video_director_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U video_director -d video_director"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: video-director-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - video_director_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  video_director_postgres:
+  video_director_redis:

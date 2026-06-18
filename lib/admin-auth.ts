@@ -1,12 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const ADMIN_SESSION_COOKIE = "ai_video_admin";
-export const DEFAULT_ADMIN_USERNAME = "admin";
-export const DEFAULT_ADMIN_PASSWORD = "157990";
-
-function defaultAdminPassword() {
-  return DEFAULT_ADMIN_PASSWORD;
-}
 
 function signSession(payload: string, secret: string) {
   return createHmac("sha256", secret).update(payload).digest("base64url");
@@ -28,7 +22,7 @@ function safeEqual(left: string, right: string) {
 }
 
 export function createAdminSessionCookie(
-  configuredPassword = process.env.ADMIN_LIBRARY_PASSWORD || defaultAdminPassword(),
+  configuredPassword = process.env.ADMIN_LIBRARY_PASSWORD || "",
   sessionSecret = process.env.ADMIN_SESSION_SECRET || process.env.ADMIN_LIBRARY_TOKEN || configuredPassword,
 ) {
   const expiresAt = Date.now() + 1000 * 60 * 60 * 8;
@@ -38,7 +32,7 @@ export function createAdminSessionCookie(
 
 export function isAdminSessionCookieValid(
   cookieValue: string,
-  configuredPassword = process.env.ADMIN_LIBRARY_PASSWORD || defaultAdminPassword(),
+  configuredPassword = process.env.ADMIN_LIBRARY_PASSWORD || "",
   sessionSecret = process.env.ADMIN_SESSION_SECRET || process.env.ADMIN_LIBRARY_TOKEN || configuredPassword,
 ) {
   const parts = cookieValue.split(".");
@@ -54,7 +48,7 @@ export function isAdminSessionCookieValid(
 export function isAdminRequestAuthorized(
   request: Request,
   configuredToken = process.env.ADMIN_LIBRARY_TOKEN || "",
-  configuredPassword = process.env.ADMIN_LIBRARY_PASSWORD || defaultAdminPassword(),
+  configuredPassword = process.env.ADMIN_LIBRARY_PASSWORD || "",
   sessionSecret = process.env.ADMIN_SESSION_SECRET || configuredToken || configuredPassword,
 ) {
   const token = configuredToken.trim();
