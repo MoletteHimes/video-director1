@@ -379,11 +379,41 @@ export function DashboardClient() {
     const res = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ script: inputScript, projectId: resumeProjectId || undefined, duration: `${inputDurationSeconds}秒`, save: true }),
+      body: JSON.stringify({ script: inputScript, duration: `${inputDurationSeconds}秒` }),
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
-    return { result: data.result as AnalysisResult, save: (data.save || null) as ProjectSaveState | null };
+    return data.result as AnalysisResult;
+  }
+
+  async function saveAnalysisProject(
+    originalScript: string,
+    analysisResult: AnalysisResult,
+    fullVideoPrompt: string,
+    projectId: string | undefined = resumeProjectId || undefined,
+  ): Promise<ProjectSaveState> {
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          originalScript,
+          result: analysisResult,
+          fullVideoPrompt,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        return { saved: false, reason: data?.error || "Project save failed" };
+      }
+      return (data.save || { saved: true }) as ProjectSaveState;
+    } catch (err) {
+      return {
+        saved: false,
+        reason: err instanceof Error ? err.message : "Project save failed",
+      };
+    }
   }
 
   async function handlePromptFileUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -443,18 +473,23 @@ export function DashboardClient() {
       if (uploadedFileName) {
         const segments = splitLongScriptIntoPromptSegments(script);
         const completed: BatchPromptSection[] = [];
+        let activeProjectId = resumeProjectId || "";
         setBatchGenerating(true);
 
         for (const segment of segments) {
           setGenerationProgress(`正在生成第 ${segment.index} / ${segments.length} 段...`);
-          const analysis = await requestAnalysis(segment.text, 15);
-          const segmentResult = analysis.result;
-          setProjectSave(analysis.save);
-          if (analysis.save?.projectId) setResumeProjectId(analysis.save.projectId);
+          const segmentResult = await requestAnalysis(segment.text, 15);
+          const fullVideoPrompt = buildVideoGenerationPromptText(segmentResult);
+          const save = await saveAnalysisProject(segment.text, segmentResult, fullVideoPrompt, activeProjectId || undefined);
+          setProjectSave(save);
+          if (save.projectId) {
+            activeProjectId = save.projectId;
+            setResumeProjectId(save.projectId);
+          }
           completed.push({
             segment,
             result: segmentResult,
-            promptText: buildVideoGenerationPromptText(segmentResult),
+            promptText: fullVideoPrompt,
           });
           setBatchResults([...completed]);
           setResult(segmentResult);
@@ -465,10 +500,11 @@ export function DashboardClient() {
       }
 
       setGenerationProgress("正在生成...");
-      const analysis = await requestAnalysis(script, durationSeconds);
-      const singleResult = analysis.result;
-      setProjectSave(analysis.save);
-      if (analysis.save?.projectId) setResumeProjectId(analysis.save.projectId);
+      const singleResult = await requestAnalysis(script, durationSeconds);
+      const fullVideoPrompt = buildVideoGenerationPromptText(singleResult);
+      const save = await saveAnalysisProject(script, singleResult, fullVideoPrompt);
+      setProjectSave(save);
+      if (save.projectId) setResumeProjectId(save.projectId);
       setResult(singleResult);
       setGenerationProgress("生成完成。");
     } catch (err: any) {

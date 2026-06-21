@@ -99,6 +99,7 @@ export class ProjectsService {
             status: true,
             storyboardImageUrl: true,
             storyboardImagePrompt: true,
+            fullVideoPrompt: true,
             createdAt: true,
             shots: {
               orderBy: { shotNumber: "asc" },
@@ -147,6 +148,7 @@ export class ProjectsService {
         status: version.status,
         storyboardImageUrl: version.storyboardImageUrl,
         storyboardImagePrompt: version.storyboardImagePrompt,
+        fullVideoPrompt: version.fullVideoPrompt,
         createdAt: version.createdAt.toISOString(),
         shots: version.shots.map(mapShotDetail),
       })),
@@ -205,6 +207,7 @@ export class ProjectsService {
           status: input.status || "draft",
           storyboardImageUrl: input.storyboardImageUrl,
           storyboardImagePrompt: input.storyboardImagePrompt,
+          fullVideoPrompt: input.fullVideoPrompt,
           shots: {
             create: input.shots.map((shot) => ({
               projectId: project.id,

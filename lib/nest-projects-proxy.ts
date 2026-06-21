@@ -13,6 +13,7 @@ type ProjectCreatePayload = Record<string, unknown> & {
   status: string | undefined;
   storyboardImageUrl: string | undefined;
   storyboardImagePrompt: string | undefined;
+  fullVideoPrompt: string | undefined;
   shots: unknown[] | undefined;
   result: AnalysisResult | undefined;
 };
@@ -93,6 +94,7 @@ export function mapAnalysisResultToNestProjectBody(input: Record<string, unknown
     status: payload.status || "draft",
     storyboardImageUrl: payload.storyboardImageUrl,
     storyboardImagePrompt: payload.storyboardImagePrompt,
+    fullVideoPrompt: payload.fullVideoPrompt,
     shots: payload.result.storyboard.map(mapShotToNestProjectBody),
   };
 }

@@ -86,6 +86,10 @@ export class CreateProjectDto {
   @IsString()
   storyboardImagePrompt?: string;
 
+  @IsOptional()
+  @IsString()
+  fullVideoPrompt?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateStoryboardShotDto)

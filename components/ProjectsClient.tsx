@@ -40,6 +40,7 @@ type ProjectVersion = {
   status: string;
   storyboardImageUrl?: string | null;
   storyboardImagePrompt?: string | null;
+  fullVideoPrompt?: string | null;
   createdAt: string;
   shots: ProjectShot[];
 };
@@ -84,6 +85,8 @@ function getFriendlyProjectError(message: string) {
 }
 
 function buildPromptText(version: ProjectVersion) {
+  if (version.fullVideoPrompt) return version.fullVideoPrompt;
+
   const shots = version.shots
     .map((shot) =>
       [
@@ -385,6 +388,18 @@ export function ProjectsClient() {
                   )}
                 </div>
               </div>
+
+              {selectedVersion.fullVideoPrompt && (
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-bold text-white">
+                    <FileText className="h-4 w-4 text-cyan-100" />
+                    视频生成提示词
+                  </div>
+                  <div className="max-h-[560px] overflow-auto whitespace-pre-wrap text-sm leading-7 text-slate-300">
+                    {selectedVersion.fullVideoPrompt}
+                  </div>
+                </div>
+              )}
 
               <div className="overflow-x-auto rounded-2xl border border-cyan-300/12">
                 <table className="w-full min-w-[980px] border-collapse text-left text-sm">
