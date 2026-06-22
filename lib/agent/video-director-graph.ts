@@ -11,6 +11,7 @@ export type VideoDirectorGraphInput = {
   duration: string;
   provider?: string;
   requestId?: string;
+  directorContext?: string;
 };
 
 const VideoDirectorState = Annotation.Root({
@@ -20,6 +21,7 @@ const VideoDirectorState = Annotation.Root({
   duration: Annotation<string>,
   provider: Annotation<string | undefined>,
   requestId: Annotation<string | undefined>,
+  directorContext: Annotation<string | undefined>,
   normalizedDuration: Annotation<string | undefined>,
   knowledgeContext: Annotation<string | undefined>,
   usedKnowledge: Annotation<UsedKnowledgeItem[]>({
@@ -194,6 +196,7 @@ const generateAnalysisNode: typeof VideoDirectorState.Node = async (state) => {
     provider: state.provider,
     requestId: state.requestId,
     knowledgeContext: state.knowledgeContext,
+    directorContext: state.directorContext,
   });
   logger.info("video_director_analysis_generated", {
     requestId: state.requestId,

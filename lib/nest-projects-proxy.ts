@@ -17,6 +17,14 @@ type ProjectCreatePayload = Record<string, unknown> & {
   storyboardImageUrl: string | undefined;
   storyboardImagePrompt: string | undefined;
   fullVideoPrompt: string | undefined;
+  storyBible: Record<string, unknown> | undefined;
+  contextSummary: string | undefined;
+  episodeSummary: string | undefined;
+  endingState: string | undefined;
+  characterState: string | undefined;
+  memoryJson: Record<string, unknown> | undefined;
+  contextSnapshot: Record<string, unknown> | undefined;
+  directorContext: string | undefined;
   shots: unknown[] | undefined;
   result: AnalysisResult | undefined;
 };
@@ -81,6 +89,104 @@ function getNestResponseData(payload: NestResponse | null) {
   return payload.data;
 }
 
+function cleanText(value: unknown, maxLength = 500) {
+  if (typeof value !== "string") return undefined;
+  const text = value.replace(/\s+/g, " ").trim();
+  return text ? text.slice(0, maxLength) : undefined;
+}
+
+function uniqueStrings(values: unknown[], limit = 12) {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const text = cleanText(value, 100);
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    result.push(text);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+function deriveProjectMemoryFromAnalysis(originalScript: string | undefined, result: AnalysisResult) {
+  const diagnosis = result.workflow?.generationDiagnosis;
+  const shots = result.storyboard || [];
+  const lastShot = shots.length ? shots[shots.length - 1] : undefined;
+  const emotions = uniqueStrings([
+    ...(diagnosis?.emotions || []),
+    ...shots.map((shot) => shot.emotion),
+  ]);
+  const sceneKeywords = uniqueStrings([
+    ...(diagnosis?.sceneKeywords || []),
+    ...shots.map((shot) => shot.scene),
+  ]);
+  const visualFocus = uniqueStrings([
+    ...(diagnosis?.visualFocus || []),
+    ...shots.map((shot) => shot.visual),
+  ]);
+  const cameraMovements = uniqueStrings([
+    diagnosis?.cameraStrategy,
+    ...shots.map((shot) => shot.cameraMovement),
+  ]);
+  const transitions = uniqueStrings(shots.map((shot) => shot.transition));
+  const avoid = uniqueStrings([
+    ...(diagnosis?.avoid || []),
+    ...shots.map((shot) => shot.negativePrompt),
+  ]);
+  const episodeSummary =
+    cleanText(result.workflow?.coreTheme, 700) ||
+    cleanText(result.optimizedScript, 700) ||
+    cleanText(originalScript, 700) ||
+    "";
+  const endingState =
+    cleanText(lastShot?.shotPurpose || lastShot?.visual || lastShot?.lastFramePrompt, 300) ||
+    "";
+  const characterState = cleanText(diagnosis?.characterState, 240) || emotions.join("、").slice(0, 240);
+  const memoryJson = {
+    diagnosis,
+    contentType: result.contentType,
+    style: result.style,
+    duration: result.duration,
+    emotions,
+    sceneKeywords,
+    visualFocus,
+    cameraMovements,
+    transitions,
+    avoid,
+    shots: shots.map((shot) => ({
+      shotNumber: shot.shotNumber,
+      scene: cleanText(shot.scene, 120),
+      visual: cleanText(shot.visual, 160),
+      shotType: cleanText(shot.shotType, 60),
+      cameraMovement: cleanText(shot.cameraMovement, 80),
+      emotion: cleanText(shot.emotion, 80),
+      transition: cleanText(shot.transition, 80),
+    })),
+  };
+  const storyBible = {
+    genre: diagnosis?.genre || result.contentType,
+    visualStyle: result.style,
+    emotionalTone: emotions,
+    sceneKeywords,
+    visualFocus,
+    cameraStyle: cameraMovements,
+    transitions,
+    forbidden: avoid,
+    currentState: endingState,
+    characterState,
+    keyEvents: episodeSummary ? [episodeSummary] : [],
+  };
+
+  return {
+    storyBible,
+    episodeSummary,
+    endingState,
+    characterState,
+    memoryJson,
+    contextSummary: [storyBible.genre, storyBible.visualStyle, endingState].filter(Boolean).join(" · "),
+  };
+}
+
 function getLocalProjectStoryboardPaths(project: unknown) {
   const projectRecord = project && typeof project === "object" ? project as Record<string, unknown> : null;
   const versions = Array.isArray(projectRecord?.versions) ? projectRecord.versions : [];
@@ -123,6 +229,7 @@ export function mapAnalysisResultToNestProjectBody(input: Record<string, unknown
   if (!payload.result) {
     return input;
   }
+  const memory = deriveProjectMemoryFromAnalysis(payload.originalScript, payload.result);
 
   return {
     projectId: payload.projectId,
@@ -137,8 +244,35 @@ export function mapAnalysisResultToNestProjectBody(input: Record<string, unknown
     storyboardImageUrl: payload.storyboardImageUrl,
     storyboardImagePrompt: payload.storyboardImagePrompt,
     fullVideoPrompt: payload.fullVideoPrompt,
+    storyBible: payload.storyBible || memory.storyBible,
+    contextSummary: payload.contextSummary || memory.contextSummary,
+    episodeSummary: payload.episodeSummary || memory.episodeSummary,
+    endingState: payload.endingState || memory.endingState,
+    characterState: payload.characterState || memory.characterState,
+    memoryJson: payload.memoryJson || memory.memoryJson,
+    contextSnapshot: payload.contextSnapshot || (payload.directorContext ? { directorContext: payload.directorContext } : undefined),
     shots: payload.result.storyboard.map(mapShotToNestProjectBody),
   };
+}
+
+export async function fetchDirectorContextFromNest(request: NextRequest, projectId: string | undefined, currentScript: string) {
+  const token = getBearerToken(request);
+  if (!token || !projectId) return "";
+
+  const upstream = await fetch(`${getNestApiBaseUrl()}/projects/${projectId}/context`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ currentScript }),
+    cache: "no-store",
+  });
+  const payload = await readJson(upstream);
+  if (!upstream.ok || !payload || !payload.ok) return "";
+
+  const data = getNestResponseData(payload);
+  return typeof data?.contextText === "string" ? data.contextText : "";
 }
 
 export async function proxyNestProjectsGet(request: NextRequest) {

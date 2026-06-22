@@ -13,6 +13,8 @@ export type AnalyzeScriptInput = {
   requestId?: string;
   /** LangGraph 检索后注入的知识库上下文。 */
   knowledgeContext?: string;
+  /** Project-level director memory assembled from user preferences, story bible, and recent episodes. */
+  directorContext?: string;
   /** Internal instruction added only after a placeholder validation failure. */
   placeholderRetryInstruction?: string;
 };
@@ -440,6 +442,19 @@ function buildShotCountGuidance(input: Pick<AnalyzeScriptInput, "script" | "dura
   ].join("\n");
 }
 
+function directorContextInstruction(input: Pick<AnalyzeScriptInput, "directorContext">) {
+  if (!input.directorContext) {
+    return "未提供连续剧导演上下文，请只根据当前文案生成。";
+  }
+
+  return [
+    "directorContext 是系统保存的导演档案，不是用户新输入文案。",
+    "请用它保持人物状态、地点道具、视觉风格、上一集结尾和未解决线索的连续性。",
+    "当前 script 永远优先；不要机械复述历史剧情，不要把历史完整提示词搬进输出。",
+    "最终仍按原有 JSON 结构生成，不要新增字段，不要改变 fullVideoPrompt 的模板定位。",
+  ].join("\n");
+}
+
 async function callOpenAICompatible(input: AnalyzeScriptInput & { provider: string }) {
   const provider = input.provider.trim();
   const baseUrl = (process.env.AI_BASE_URL || (provider === "deepseek" ? "https://api.deepseek.com" : "https://api.openai.com/v1")).trim();
@@ -453,6 +468,7 @@ async function callOpenAICompatible(input: AnalyzeScriptInput & { provider: stri
     model,
     scriptLength: input.script.length,
     knowledgeContextLength: input.knowledgeContext?.length || 0,
+    directorContextLength: input.directorContext?.length || 0,
   });
 
   const res = await fetchAiProvider(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
@@ -477,6 +493,8 @@ async function callOpenAICompatible(input: AnalyzeScriptInput & { provider: stri
             duration: input.duration,
             script: input.script,
             knowledgeContext: input.knowledgeContext || "",
+            directorContext: input.directorContext || "",
+            directorContextInstruction: directorContextInstruction(input),
             knowledgeInstruction: input.knowledgeContext
               ? "必须优先参考 knowledgeContext 中的镜头、运镜、转场、风格、公式和避免事项；不要逐字照抄，要结合用户文案自然改写；avoid/必须避免内容要进入负面提示词。"
               : "未提供额外知识库上下文，请按通用导演规则生成。",
@@ -537,6 +555,7 @@ async function callAnthropic(input: AnalyzeScriptInput) {
     model,
     scriptLength: input.script.length,
     knowledgeContextLength: input.knowledgeContext?.length || 0,
+    directorContextLength: input.directorContext?.length || 0,
   });
   const res = await fetchAiProvider(`${baseUrl}/v1/messages`, {
     method: "POST",
@@ -560,6 +579,8 @@ async function callAnthropic(input: AnalyzeScriptInput) {
             duration: input.duration,
             script: input.script,
             knowledgeContext: input.knowledgeContext || "",
+            directorContext: input.directorContext || "",
+            directorContextInstruction: directorContextInstruction(input),
             knowledgeInstruction: input.knowledgeContext
               ? "必须优先参考 knowledgeContext 中的镜头、运镜、转场、风格、公式和避免事项；不要逐字照抄，要结合用户文案自然改写；avoid/必须避免内容要进入负面提示词。"
               : "未提供额外知识库上下文，请按通用导演规则生成。",

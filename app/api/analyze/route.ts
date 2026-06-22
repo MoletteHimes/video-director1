@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { analyzeScript } from "@/lib/ai";
-import { saveAnalysisProjectToNest } from "@/lib/nest-projects-proxy";
+import { fetchDirectorContextFromNest, saveAnalysisProjectToNest } from "@/lib/nest-projects-proxy";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { createRequestId, durationSince, logger } from "@/lib/logger";
 
@@ -43,7 +43,10 @@ export async function POST(request: NextRequest) {
       scriptLength: body.script.length,
       saveRequested: body.save,
     });
-    const result = await analyzeScript({ ...body, requestId });
+    const directorContext = body.projectId
+      ? await fetchDirectorContextFromNest(request, body.projectId, body.script)
+      : "";
+    const result = await analyzeScript({ ...body, requestId, directorContext });
 
     let saveMeta: any = { saved: false };
     if (body.save) {

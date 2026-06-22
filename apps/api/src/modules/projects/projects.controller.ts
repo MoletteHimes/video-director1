@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from "@nestjs/common";
 import { ok } from "../../common/api-response";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { CreateProjectDto, SaveStoryboardImageDto } from "./projects.dto";
+import { BuildProjectContextDto, CreateProjectDto, SaveStoryboardImageDto } from "./projects.dto";
 import { ProjectsService } from "./projects.service";
 
 @Controller("projects")
@@ -34,6 +34,16 @@ export class ProjectsController {
     @Param("versionId") versionId: string,
   ) {
     const result = await this.projectsService.deleteProjectVersion(request.user.id, projectId, versionId);
+    return ok(result);
+  }
+
+  @Post(":projectId/context")
+  async buildProjectContext(
+    @Req() request: { user: { id: string } },
+    @Param("projectId") projectId: string,
+    @Body() body: BuildProjectContextDto,
+  ) {
+    const result = await this.projectsService.buildGenerationContext(request.user.id, projectId, body.currentScript);
     return ok(result);
   }
 

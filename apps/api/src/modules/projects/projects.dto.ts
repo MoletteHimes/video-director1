@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { IsArray, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, ValidateNested } from "class-validator";
+import { IsArray, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUUID, ValidateNested } from "class-validator";
 
 export class CreateStoryboardShotDto {
   @IsNumber()
@@ -94,6 +94,34 @@ export class CreateProjectDto {
   @IsString()
   fullVideoPrompt?: string;
 
+  @IsOptional()
+  @IsObject()
+  storyBible?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  contextSummary?: string;
+
+  @IsOptional()
+  @IsString()
+  episodeSummary?: string;
+
+  @IsOptional()
+  @IsString()
+  endingState?: string;
+
+  @IsOptional()
+  @IsString()
+  characterState?: string;
+
+  @IsOptional()
+  @IsObject()
+  memoryJson?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  contextSnapshot?: Record<string, unknown>;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateStoryboardShotDto)
@@ -107,4 +135,9 @@ export class SaveStoryboardImageDto {
   @IsOptional()
   @IsString()
   storyboardImagePrompt?: string;
+}
+
+export class BuildProjectContextDto {
+  @IsString()
+  currentScript!: string;
 }

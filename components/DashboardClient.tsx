@@ -389,10 +389,29 @@ export function DashboardClient() {
   }, []);
 
   async function requestAnalysis(inputScript: string, inputDurationSeconds: number) {
+    return requestAnalysisWithContext(
+      inputScript,
+      inputDurationSeconds,
+      resumeProjectId || undefined,
+      resumeVersionId || undefined,
+    );
+  }
+
+  async function requestAnalysisWithContext(
+    inputScript: string,
+    inputDurationSeconds: number,
+    projectId: string | undefined = resumeProjectId || undefined,
+    versionId: string | undefined = resumeVersionId || undefined,
+  ) {
     const res = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ script: inputScript, duration: `${inputDurationSeconds}秒` }),
+      body: JSON.stringify({
+        script: inputScript,
+        duration: `${inputDurationSeconds}秒`,
+        projectId: projectId || undefined,
+        versionId: versionId || undefined,
+      }),
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
@@ -493,7 +512,7 @@ export function DashboardClient() {
 
         for (const segment of segments) {
           setGenerationProgress(`正在生成第 ${segment.index} / ${segments.length} 段...`);
-          const segmentResult = await requestAnalysis(segment.text, 15);
+          const segmentResult = await requestAnalysisWithContext(segment.text, 15, activeProjectId || undefined, undefined);
           const fullVideoPrompt = buildVideoGenerationPromptText(segmentResult);
           const save = await saveAnalysisProject(segment.text, segmentResult, fullVideoPrompt, activeProjectId || undefined, undefined);
           setProjectSave(save);
