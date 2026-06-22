@@ -10,7 +10,8 @@ test("analyze route saves generated projects through NestJS projects instead of 
   assert.doesNotMatch(analyzeRoute, /project-store/);
   assert.match(analyzeRoute, /NextRequest/);
   assert.match(analyzeRoute, /projectId: z\.string\(\)\.uuid\(\)\.optional\(\)/);
-  assert.match(analyzeRoute, /saveAnalysisProjectToNest\(request, body\.script, result, body\.projectId\)/);
+  assert.match(analyzeRoute, /versionId: z\.string\(\)\.uuid\(\)\.optional\(\)/);
+  assert.match(analyzeRoute, /saveAnalysisProjectToNest\(request, body\.script, result, body\.projectId, body\.versionId\)/);
 
   assert.match(projectProxy, /export async function saveAnalysisProjectToNest/);
   assert.match(projectProxy, /mapAnalysisResultToNestProjectBody/);

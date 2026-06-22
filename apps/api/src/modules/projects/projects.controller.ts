@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from "@nestjs/common";
 import { ok } from "../../common/api-response";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CreateProjectDto, SaveStoryboardImageDto } from "./projects.dto";
@@ -19,6 +19,22 @@ export class ProjectsController {
   async getProject(@Req() request: { user: { id: string } }, @Param("projectId") projectId: string) {
     const project = await this.projectsService.getProject(request.user.id, projectId);
     return ok({ project });
+  }
+
+  @Delete(":projectId")
+  async deleteProject(@Req() request: { user: { id: string } }, @Param("projectId") projectId: string) {
+    const result = await this.projectsService.deleteProject(request.user.id, projectId);
+    return ok(result);
+  }
+
+  @Delete(":projectId/versions/:versionId")
+  async deleteProjectVersion(
+    @Req() request: { user: { id: string } },
+    @Param("projectId") projectId: string,
+    @Param("versionId") versionId: string,
+  ) {
+    const result = await this.projectsService.deleteProjectVersion(request.user.id, projectId, versionId);
+    return ok(result);
   }
 
   @Post()

@@ -43,6 +43,18 @@ const ModelStringArray = z.preprocess(
   z.array(ModelString)
 );
 
+const GenerationDiagnosisSchema = z.object({
+  genre: OptionalModelString,
+  emotions: ModelStringArray,
+  pace: OptionalModelString,
+  sceneKeywords: ModelStringArray,
+  characterState: OptionalModelString,
+  visualFocus: ModelStringArray,
+  cameraStrategy: OptionalModelString,
+  soundStrategy: OptionalModelString,
+  avoid: ModelStringArray,
+});
+
 const AnalysisSchema = z.object({
   title: ModelString,
   contentType: ModelString,
@@ -52,6 +64,7 @@ const AnalysisSchema = z.object({
   optimizedScript: ModelString,
   workflow: z.object({
     sourceAnalysis: ModelString,
+    generationDiagnosis: GenerationDiagnosisSchema,
     coreTheme: OptionalModelString,
     videoParameterLock: OptionalModelString,
     screenplay: ModelString,
@@ -110,7 +123,9 @@ const DOCUMENT_TEMPLATE_TASK = [
   "必须先输出段落级剧本信息：标题、总时长、场次类型、时间、地点、天气、主要人物、段落功能、场次正文、段尾衔接、导演备注、摄影备注、美术备注、声音备注。",
   "必须输出专业电影脚本：每个镜头都要有时间段、景别、机位/构图、运镜、画面内容、光影/色调、声音设计、台词、情绪、转场、镜头意图。",
   "必须输出完整视频总提示词：用中文完整成片描述，整合风格、人物、场景、天气、空间关系、关键物件、动作、镜头节奏、声音、台词、转场、生成方式。",
+  "必须先完成 workflow.generationDiagnosis，再根据 generationDiagnosis 生成 workflow.shotPromptText 和 storyboard。generationDiagnosis 要判断片种、情绪、节奏、场景关键词、人物状态、视觉重点、运镜策略、声音策略和避免项。",
   "workflow.shotPromptText 必须直接写成最终展示模板，格式固定为：核心主题、技术参数、镜头画面 + 时间轴 + 声音 / 台词。不要在这个字段里写第一步、第二步、第三步，也不要写英文视频提示词。",
+  "workflow.shotPromptText 的技术参数部分请逐行输出；总时长、画幅、帧率必须始终输出；其他技术参数只在原文或 generationDiagnosis 能够判断时输出，没有明确依据的内容不要强行补充，不要为了填满字段而编造天气、人物、地点、禁忌项。",
   "必须输出每个镜头的完整中文可复制提示词：包括首帧提示词、本镜头视频提示词、尾帧提示词、负面提示词、精简提示词。",
   "最终全部提示词汇总必须完整展开所有内容，不能写“如上”“见上文”“同上”“略”“占位符”“{变量名}”。",
   "悬疑刑侦题材禁止血腥猎奇：不拍尸体正脸、不拍腐烂细节、不拍血浆、不拍伤口和器官。用白布轮廓、担架、水迹、水草、记录本、警戒线、人物反应、环境声表现。",
@@ -130,10 +145,21 @@ const requiredJsonShape = {
   workflow: {
     sourceAnalysis:
       "原文案分析：类型、主题、人物、地点、时间、天气、冲突、证言/证据、关键视觉线索、改编策略。",
+    generationDiagnosis: {
+      genre: "片种判断，例如：悬疑 / 剧情 / 爱情 / 科幻 / 日常。必须来自原文和题材气质。",
+      emotions: ["主要情绪，例如：紧张、不安、释然、温暖。只写能从原文判断出的情绪。"],
+      pace: "节奏判断，例如：缓慢、克制、中速、快速。根据事件密度和情绪节奏判断。",
+      sceneKeywords: ["场景关键词，例如：雨夜、废弃大楼、室内房间。没有明确依据不要编造。"],
+      characterState: "人物状态，例如：迟疑、震惊、疲惫、释然。根据动作和心理判断。",
+      visualFocus: ["视觉重点，例如：旧照片、门缝、脚步、背影、灯光。"],
+      cameraStrategy: "运镜策略，例如：缓慢推进、固定观察、手持跟拍。服务镜头情绪和叙事功能。",
+      soundStrategy: "声音策略，例如：雨声、脚步声、呼吸声、低沉环境声。服务场景和情绪。",
+      avoid: ["避免项，例如：血腥、鬼脸、jump scare、无关现代元素。根据题材风险判断。"],
+    },
     coreTheme:
       "核心主题：用一段话概括本段要表现的核心事件、情绪和叙事作用。",
     videoParameterLock:
-      "视频参数锁定：总时长、画幅、帧率、风格、场景、人物、时间天气、运镜原则、声音原则、禁忌项。",
+      "视频参数锁定：技术参数部分请逐行输出；总时长、画幅、帧率必须始终输出；其他技术参数只在原文或 generationDiagnosis 能够判断时输出，没有明确依据的内容不要强行补充，不要为了填满字段而编造天气、人物、地点、禁忌项。",
     screenplay:
       "第一步：文案 -> 剧本。必须包含标题、时长、场次类型、时间、地点、天气、主要人物、段落功能、场次一/场次二正文、段尾衔接、导演备注、摄影备注、美术备注、声音备注。",
     filmScript:
@@ -406,6 +432,7 @@ function buildShotCountGuidance(input: Pick<AnalyzeScriptInput, "script" | "dura
   const duration = normalizeDuration(input.duration, input.script);
   return [
     `用户选择的视频总时长是 ${duration}。这个时长是镜头设计预算，必须锁定在 4-15 秒内。`,
+    `基础视频规格必须锁定：总时长：${duration}；画幅：16:9；帧率：24fps。不要让 AI 自行改写这三项。`,
     "先分析文案节拍：事件数量、动作数量、场景变化、情绪转折、关键物件、台词密度和信息复杂度。",
     "不要按固定区间机械决定镜头数；不要因为 13-15 秒就固定 5 个镜头，也不要因为 4-6 秒就固定 2 个镜头。",
     "镜头数量必须服务文案：极简情绪或单一动作可以用 1 个连续镜头；普通短段落可用 2-4 个镜头；信息密度高、人物反应多、线索推进多时可用 4-5 个镜头。",

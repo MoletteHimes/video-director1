@@ -51,6 +51,10 @@ export class CreateProjectDto {
   @IsUUID()
   projectId?: string;
 
+  @IsOptional()
+  @IsUUID()
+  versionId?: string;
+
   @IsNotEmpty()
   @IsString()
   title!: string;

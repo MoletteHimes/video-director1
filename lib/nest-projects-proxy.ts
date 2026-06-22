@@ -1,9 +1,12 @@
+import { unlink } from "node:fs/promises";
+import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { NEST_AUTH_TOKEN_COOKIE } from "@/lib/nest-auth-proxy";
 import type { AnalysisResult, StoryboardShot } from "@/types";
 
 type ProjectCreatePayload = Record<string, unknown> & {
   projectId: string | undefined;
+  versionId: string | undefined;
   title: string | undefined;
   originalScript: string | undefined;
   optimizedScript: string | undefined;
@@ -20,6 +23,7 @@ type ProjectCreatePayload = Record<string, unknown> & {
 
 type NestResponseData = Record<string, unknown> & {
   projects: unknown[] | undefined;
+  project: unknown | undefined;
   saved: boolean | undefined;
   projectId: string | undefined;
   versionId: string | undefined;
@@ -77,6 +81,43 @@ function getNestResponseData(payload: NestResponse | null) {
   return payload.data;
 }
 
+function getLocalProjectStoryboardPaths(project: unknown) {
+  const projectRecord = project && typeof project === "object" ? project as Record<string, unknown> : null;
+  const versions = Array.isArray(projectRecord?.versions) ? projectRecord.versions : [];
+  const storyboardRoot = path.resolve(process.cwd(), "public", "project-assets", "storyboards");
+  const filePaths = new Set<string>();
+
+  for (const version of versions) {
+    const versionRecord = version && typeof version === "object" ? version as Record<string, unknown> : null;
+    const storyboardImageUrl = versionRecord ? versionRecord.storyboardImageUrl : undefined;
+    if (typeof storyboardImageUrl !== "string") continue;
+
+    const urlPath = storyboardImageUrl.split(/[?#]/)[0];
+    if (!urlPath.startsWith("/project-assets/storyboards/")) continue;
+
+    const absolutePath = path.resolve(process.cwd(), "public", urlPath.slice(1));
+    if (absolutePath !== storyboardRoot && absolutePath.startsWith(`${storyboardRoot}${path.sep}`)) {
+      filePaths.add(absolutePath);
+    }
+  }
+
+  return [...filePaths];
+}
+
+async function deleteLocalProjectStoryboardImages(project: unknown) {
+  await Promise.all(
+    getLocalProjectStoryboardPaths(project).map(async (filePath) => {
+      try {
+        await unlink(filePath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          // Project deletion should not fail because a local preview file was already removed.
+        }
+      }
+    }),
+  );
+}
+
 export function mapAnalysisResultToNestProjectBody(input: Record<string, unknown>) {
   const payload = input as ProjectCreatePayload;
   if (!payload.result) {
@@ -85,6 +126,7 @@ export function mapAnalysisResultToNestProjectBody(input: Record<string, unknown
 
   return {
     projectId: payload.projectId,
+    versionId: payload.versionId,
     title: payload.result.title,
     originalScript: payload.originalScript || "",
     optimizedScript: payload.result.optimizedScript,
@@ -147,6 +189,70 @@ export async function proxyNestProjectGet(request: NextRequest, projectId: strin
   return NextResponse.json({ ok: true, project: data ? data.project || null : null });
 }
 
+export async function proxyNestProjectDelete(request: NextRequest, projectId: string) {
+  const token = getBearerToken(request);
+  if (!token) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+
+  let projectBeforeDelete: unknown = null;
+  const detailUpstream = await fetch(`${getNestApiBaseUrl()}/projects/${projectId}`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const detailPayload = await readJson(detailUpstream);
+  if (detailUpstream.ok && detailPayload && detailPayload.ok) {
+    const detailData = getNestResponseData(detailPayload);
+    projectBeforeDelete = detailData ? detailData.project || null : null;
+  }
+
+  const upstream = await fetch(`${getNestApiBaseUrl()}/projects/${projectId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const payload = await readJson(upstream);
+
+  if (!upstream.ok || !payload || !payload.ok) {
+    const error =
+      upstream.status === 404
+        ? "Project delete endpoint is unavailable. Restart the Nest API with npm run api:dev, then refresh this page."
+        : formatUpstreamError(payload, "Project delete request failed");
+    return NextResponse.json(
+      { ok: false, error },
+      { status: upstream.status || 502 },
+    );
+  }
+
+  await deleteLocalProjectStoryboardImages(projectBeforeDelete);
+
+  return NextResponse.json({ ok: true, delete: getNestResponseData(payload) || { deleted: true, projectId } });
+}
+
+export async function proxyNestProjectVersionDelete(request: NextRequest, projectId: string, versionId: string) {
+  const token = getBearerToken(request);
+  if (!token) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+
+  const upstream = await fetch(`${getNestApiBaseUrl()}/projects/${projectId}/versions/${versionId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const payload = await readJson(upstream);
+
+  if (!upstream.ok || !payload || !payload.ok) {
+    const error =
+      upstream.status === 404
+        ? "Project episode delete endpoint is unavailable. Restart the Nest API with npm run api:dev, then refresh this page."
+        : formatUpstreamError(payload, "Project episode delete request failed");
+    return NextResponse.json(
+      { ok: false, error },
+      { status: upstream.status || 502 },
+    );
+  }
+
+  return NextResponse.json({ ok: true, delete: getNestResponseData(payload) || { deleted: true, projectId, versionId } });
+}
+
 export async function proxyNestProjectsPost(request: NextRequest) {
   const token = getBearerToken(request);
   if (!token) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -178,11 +284,12 @@ export async function saveAnalysisProjectToNest(
   originalScript: string,
   result: AnalysisResult,
   projectId: string | undefined = undefined,
+  versionId: string | undefined = undefined,
 ) {
   const token = getBearerToken(request);
   if (!token) return { saved: false, reason: "Unauthorized" };
 
-  const body = mapAnalysisResultToNestProjectBody({ projectId, originalScript, result });
+  const body = mapAnalysisResultToNestProjectBody({ projectId, versionId, originalScript, result });
   const upstream = await fetch(`${getNestApiBaseUrl()}/projects`, {
     method: "POST",
     headers: {

@@ -180,6 +180,17 @@ ${shot.negativePrompt}`
     )
     .join("\n\n");
   const fullNegativePrompt = buildNegativePrompt(type);
+  const generationDiagnosis = {
+    genre: type,
+    emotions: /悬疑|刑侦|惊悚|犯罪/.test(type) ? ["克制", "紧张", "不安"] : ["真实", "清晰"],
+    pace: duration.includes("8") || duration.includes("10") ? "中速" : "缓慢推进",
+    sceneKeywords: [input.contentType || type].filter(Boolean),
+    characterState: /悬疑|刑侦|惊悚|犯罪/.test(type) ? "克制观察，逐步接近线索" : "按原文动作自然推进",
+    visualFocus: storyboard.slice(0, 3).map((shot) => shot.scene),
+    cameraStrategy: "根据文案节拍组合固定镜头、缓慢推进、跟拍和特写，不按固定秒数机械拆分。",
+    soundStrategy: "以真实环境声、动作声和必要短台词为主，音乐只做低音氛围。",
+    avoid: ["字幕", "水印", "无关角色", "无依据的地点天气", ...(/悬疑|刑侦|惊悚|犯罪/.test(type) ? ["血腥", "鬼脸", "jump scare"] : [])],
+  };
   const coreTheme = `核心主题：把原文案“${source.slice(0, 120)}${source.length > 120 ? "..." : ""}”改编成一段${duration}的${type}视频。重点不是压缩剧情，而是用${storyboard.length}个镜头依次建立环境、主体动作、关键线索、人物反应和悬念落点。`;
   const videoParameterLock =
     `视频参数锁定：
@@ -224,6 +235,7 @@ ${concisePrompt}`;
   return {
     sourceAnalysis:
       `原文案属于${type}。核心内容是：${source}。改编重点是先锁定人物、地点和关键线索，再把抽象情绪转成可见的空间压力、动作细节、光影方向和环境声音。`,
+    generationDiagnosis,
     coreTheme,
     videoParameterLock,
     screenplay:

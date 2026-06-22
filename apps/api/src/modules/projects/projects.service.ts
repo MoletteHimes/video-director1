@@ -155,6 +155,49 @@ export class ProjectsService {
     };
   }
 
+  async deleteProject(userId: string, projectId: string) {
+    if (!userId) throw new BadRequestException("Authenticated user id is required");
+
+    const result = await this.prisma.project.deleteMany({
+      where: { id: projectId, userId },
+    });
+
+    if (result.count === 0) throw new BadRequestException("Project not found");
+
+    return { deleted: true, projectId };
+  }
+
+  async deleteProjectVersion(userId: string, projectId: string, versionId: string) {
+    if (!userId) throw new BadRequestException("Authenticated user id is required");
+
+    const result = await this.prisma.$transaction(async (prisma) => {
+      const version = await prisma.projectVersion.findFirst({
+        where: { id: versionId, projectId, project: { userId } },
+        select: { id: true, versionNumber: true },
+      });
+
+      if (!version) throw new BadRequestException("Project version not found");
+
+      await prisma.projectVersion.delete({ where: { id: version.id } });
+      const laterVersions = await prisma.projectVersion.findMany({
+        where: { projectId, versionNumber: { gt: version.versionNumber } },
+        orderBy: { versionNumber: "asc" },
+        select: { id: true },
+      });
+
+      for (const laterVersion of laterVersions) {
+        await prisma.projectVersion.update({
+          where: { id: laterVersion.id },
+          data: { versionNumber: { decrement: 1 } },
+        });
+      }
+
+      return { versionNumber: version.versionNumber };
+    });
+
+    return { deleted: true, projectId, versionId, versionNumber: result.versionNumber };
+  }
+
   async createProject(userId: string, input: CreateProjectDto) {
     if (!userId) throw new BadRequestException("Authenticated user id is required");
 
@@ -186,6 +229,51 @@ export class ProjectsService {
             },
             select: { id: true },
           });
+
+      if (input.versionId) {
+        const ownedVersion = await prisma.projectVersion.findFirst({
+          where: { id: input.versionId, projectId: project.id, project: { userId } },
+          select: { id: true, versionNumber: true },
+        });
+        if (!ownedVersion) throw new BadRequestException("Project version not found");
+
+        await prisma.storyboardShot.deleteMany({ where: { versionId: input.versionId } });
+
+        const version = await prisma.projectVersion.update({
+          where: { id: ownedVersion.id },
+          data: {
+            title: input.title,
+            originalScript: input.originalScript,
+            optimizedScript: input.optimizedScript,
+            contentType: input.contentType,
+            style: input.style,
+            duration: input.duration,
+            status: input.status || "draft",
+            storyboardImageUrl: input.storyboardImageUrl,
+            storyboardImagePrompt: input.storyboardImagePrompt,
+            fullVideoPrompt: input.fullVideoPrompt,
+            shots: {
+              create: input.shots.map((shot) => ({
+                projectId: project.id,
+                shotNumber: shot.shotNumber,
+                scene: shot.scene,
+                visual: shot.visual,
+                shotType: shot.shotType,
+                cameraMovement: shot.cameraMovement,
+                emotion: shot.emotion,
+                transition: shot.transition,
+                firstFramePrompt: shot.firstFramePrompt,
+                videoPrompt: shot.videoPrompt,
+                lastFramePrompt: shot.lastFramePrompt,
+                negativePrompt: shot.negativePrompt,
+              })),
+            },
+          },
+          select: { id: true },
+        });
+
+        return { project, version, versionNumber: ownedVersion.versionNumber };
+      }
 
       const latestVersion = await prisma.projectVersion.findFirst({
         where: { projectId: project.id },

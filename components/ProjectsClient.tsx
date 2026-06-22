@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Copy, Download, Edit3, FileText, Image as ImageIcon, Loader2, RefreshCw } from "lucide-react";
+import { CalendarClock, Copy, Download, Edit3, FileText, Image as ImageIcon, Loader2, RefreshCw, Trash2 } from "lucide-react";
 
 type ProjectSummary = {
   id: string;
@@ -69,13 +69,6 @@ function formatDate(value?: string) {
   }).format(new Date(value));
 }
 
-function getStatusLabel(status: string) {
-  if (status === "draft") return "草稿";
-  if (status === "completed") return "已完成";
-  if (status === "failed") return "失败";
-  return status || "未知";
-}
-
 function getFriendlyProjectError(message: string) {
   if (/endpoint is unavailable|Cannot GET|Not Found/i.test(message)) {
     return "项目详情接口暂时不可用。请重启 Nest API 后刷新页面，或者点击下方重试。";
@@ -120,6 +113,10 @@ export function ProjectsClient() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [listError, setListError] = useState("");
   const [projectDetailError, setProjectDetailError] = useState("");
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [checkedProjectIds, setCheckedProjectIds] = useState<string[]>([]);
+  const [deletingProjects, setDeletingProjects] = useState(false);
+  const [deletingEpisode, setDeletingEpisode] = useState(false);
 
   const selectedVersion = useMemo(() => {
     if (!project) return null;
@@ -184,6 +181,18 @@ export function ProjectsClient() {
     if (!project || !selectedVersion) return;
     window.localStorage.setItem("vd_resume_script", selectedVersion.originalScript || project.originalScript || "");
     window.localStorage.setItem("vd_resume_project_id", project.id);
+    window.localStorage.setItem("vd_resume_version_id", selectedVersion.id);
+    window.location.href = "/dashboard";
+  }
+
+  function startNewEpisode() {
+    if (project?.id) {
+      window.localStorage.setItem("vd_resume_project_id", project.id);
+    } else {
+      window.localStorage.removeItem("vd_resume_project_id");
+    }
+    window.localStorage.removeItem("vd_resume_script");
+    window.localStorage.removeItem("vd_resume_version_id");
     window.location.href = "/dashboard";
   }
 
@@ -198,9 +207,9 @@ export function ProjectsClient() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        title: `${selectedVersion.title}-v${selectedVersion.versionNumber}`,
+        title: `${selectedVersion.title}-第${selectedVersion.versionNumber}集`,
         sections: [{
-          heading: `${selectedVersion.title} v${selectedVersion.versionNumber}`,
+          heading: `${selectedVersion.title} 第${selectedVersion.versionNumber}集`,
           originalText: selectedVersion.originalScript,
           promptText: buildPromptText(selectedVersion),
         }],
@@ -216,11 +225,88 @@ export function ProjectsClient() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${selectedVersion.title}-v${selectedVersion.versionNumber}.docx`;
+    link.download = `${selectedVersion.title}-第${selectedVersion.versionNumber}集.docx`;
     document.body.appendChild(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+  }
+
+  function toggleProjectChecked(projectId: string) {
+    setCheckedProjectIds((ids) =>
+      ids.includes(projectId) ? ids.filter((id) => id !== projectId) : [...ids, projectId],
+    );
+  }
+
+  function handleProjectClick(projectId: string) {
+    if (deleteMode) {
+      toggleProjectChecked(projectId);
+      return;
+    }
+    setSelectedProjectId(projectId);
+  }
+
+  async function deleteCheckedProjects() {
+    if (!deleteMode) {
+      setDeleteMode(true);
+      setCheckedProjectIds([]);
+      return;
+    }
+
+    if (!checkedProjectIds.length) {
+      setDeleteMode(false);
+      return;
+    }
+
+    if (!window.confirm(`确定彻底删除 ${checkedProjectIds.length} 个项目吗？`)) return;
+
+    setDeletingProjects(true);
+    setListError("");
+    try {
+      await Promise.all(
+        checkedProjectIds.map(async (projectId) => {
+          const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
+          const data = await res.json().catch(() => null);
+          if (!res.ok || !data?.ok) throw new Error(data?.error || "项目删除失败");
+        }),
+      );
+
+      const remainingProjects = projects.filter((item) => !checkedProjectIds.includes(item.id));
+      const nextSelectedId =
+        remainingProjects.find((item) => item.id === selectedProjectId)?.id || remainingProjects[0]?.id || "";
+
+      setProjects(remainingProjects);
+      setCheckedProjectIds([]);
+      setDeleteMode(false);
+      setSelectedProjectId(nextSelectedId);
+      if (!nextSelectedId) {
+        setProject(null);
+        setSelectedVersionId("");
+        setProjectDetailError("");
+      }
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : "项目删除失败");
+    } finally {
+      setDeletingProjects(false);
+    }
+  }
+
+  async function deleteSelectedEpisode() {
+    if (!project || !selectedVersion) return;
+    if (!window.confirm(`确定删除第 ${selectedVersion.versionNumber} 集吗？后面的集数会自动补位。`)) return;
+
+    setDeletingEpisode(true);
+    setProjectDetailError("");
+    try {
+      const res = await fetch(`/api/projects/${project.id}?versionId=${selectedVersion.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) throw new Error(data?.error || "剧集删除失败");
+      await reloadSelectedProject(project.id);
+    } catch (err) {
+      setProjectDetailError(err instanceof Error ? err.message : "剧集删除失败");
+    } finally {
+      setDeletingEpisode(false);
+    }
   }
 
   return (
@@ -230,12 +316,27 @@ export function ProjectsClient() {
           <div>
             <div className="mb-2 text-xs uppercase tracking-wide text-cyan-200/70">Project History</div>
             <h1 className="text-3xl font-black text-white">我的项目</h1>
-            <p className="mt-2 text-sm text-slate-400">这里保存生成过的视频提示词、版本记录、镜头表和分镜图。</p>
+            <p className="mt-2 text-sm text-slate-400">这里保存生成过的视频提示词、剧集记录、镜头表和分镜图。</p>
           </div>
-          <a href="/dashboard" className="inline-flex items-center gap-2 rounded-xl border border-cyan-300/18 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-50 transition hover:bg-cyan-300/16">
-            <Edit3 className="h-4 w-4" />
-            新建生成
-          </a>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={deleteCheckedProjects}
+              disabled={deletingProjects}
+              className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition ${
+                deleteMode
+                  ? "border-red-300/30 bg-red-500/15 text-red-50 hover:bg-red-500/20"
+                  : "border-white/10 bg-white/[0.04] text-slate-100 hover:bg-white/[0.08]"
+              } disabled:cursor-not-allowed disabled:opacity-60`}
+            >
+              {deletingProjects ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              {deleteMode ? (checkedProjectIds.length ? `删除 ${checkedProjectIds.length}` : "取消删除") : "删除"}
+            </button>
+            <button type="button" onClick={startNewEpisode} className="inline-flex items-center gap-2 rounded-xl border border-cyan-300/18 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-50 transition hover:bg-cyan-300/16">
+              <Edit3 className="h-4 w-4" />
+              新建生成
+            </button>
+          </div>
         </div>
       </div>
 
@@ -254,6 +355,10 @@ export function ProjectsClient() {
             {loadingList && <Loader2 className="h-4 w-4 animate-spin text-cyan-100" />}
           </div>
 
+          {deleteMode && (
+            <p className="mb-3 px-2 text-xs text-red-100/75">删除模式：点击项目右侧的框勾选，再点击顶部删除。</p>
+          )}
+
           {!loadingList && !projects.length && (
             <div className="rounded-xl border border-dashed border-cyan-300/16 bg-slate-950/60 p-4 text-sm leading-6 text-slate-400">
               还没有保存的项目。去工作台生成一次后，这里会自动出现历史记录。
@@ -266,7 +371,7 @@ export function ProjectsClient() {
               return (
                 <button
                   key={item.id}
-                  onClick={() => setSelectedProjectId(item.id)}
+                  onClick={() => handleProjectClick(item.id)}
                   className={`w-full rounded-xl border p-3 text-left transition ${
                     active
                       ? "border-cyan-200/50 bg-cyan-300/[0.09]"
@@ -278,7 +383,17 @@ export function ProjectsClient() {
                       <div className="truncate font-bold text-white">{item.title}</div>
                       <div className="mt-1 text-xs text-slate-500">{item.content_type || "自动分类"} · {item.duration || "-"}</div>
                     </div>
-                    <span className="shrink-0 rounded-full border border-white/10 px-2 py-0.5 text-[11px] text-slate-400">{getStatusLabel(item.status)}</span>
+                    {deleteMode && (
+                      <span
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border text-xs font-bold ${
+                          checkedProjectIds.includes(item.id)
+                            ? "border-cyan-200/50 bg-cyan-300/25 text-cyan-50"
+                            : "border-white/15 bg-white/[0.03] text-transparent"
+                        }`}
+                      >
+                        ✓
+                      </span>
+                    )}
                   </div>
                   <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
                     <CalendarClock className="h-3.5 w-3.5" />
@@ -334,6 +449,14 @@ export function ProjectsClient() {
                     <RefreshCw className="h-4 w-4" />
                     继续编辑
                   </button>
+                  <button onClick={startNewEpisode} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.08]">
+                    <Edit3 className="h-4 w-4" />
+                    新建一集
+                  </button>
+                  <button onClick={deleteSelectedEpisode} disabled={deletingEpisode} className="inline-flex items-center gap-2 rounded-xl border border-red-300/20 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-50 transition hover:bg-red-500/16 disabled:cursor-not-allowed disabled:opacity-60">
+                    {deletingEpisode ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    删除本集
+                  </button>
                   <button onClick={copyPrompt} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.08]">
                     <Copy className="h-4 w-4" />
                     复制提示词
@@ -356,7 +479,7 @@ export function ProjectsClient() {
                         : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.08]"
                     }`}
                   >
-                    版本 v{version.versionNumber}
+                    第 {version.versionNumber} 集
                     <span className="ml-2 text-xs text-slate-500">{formatDate(version.createdAt)}</span>
                   </button>
                 ))}
@@ -383,7 +506,7 @@ export function ProjectsClient() {
                     </div>
                   ) : (
                     <div className="flex h-48 items-center justify-center rounded-xl border border-dashed border-cyan-300/16 bg-slate-950/60 px-4 text-center text-sm text-slate-500">
-                      这个版本还没有生成分镜图，但提示词和镜头表已经保存。
+                      这一集还没有生成分镜图，但提示词和镜头表已经保存。
                     </div>
                   )}
                 </div>

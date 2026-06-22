@@ -46,11 +46,48 @@ test("real-provider prompt enforces the user's Word-template quality bar", async
   assert.match(aiSource, /temperature: 0\.18/);
 });
 
+test("video parameter lock asks for contextual line breaks without forced fields", async () => {
+  const aiSource = await readFile(join(process.cwd(), "lib", "ai.ts"), "utf8");
+
+  assert.match(aiSource, /技术参数部分请逐行输出/);
+  assert.match(aiSource, /其他技术参数只在原文或 generationDiagnosis 能够判断时输出/);
+  assert.match(aiSource, /没有明确依据的内容不要强行补充/);
+  assert.match(aiSource, /不要为了填满字段而编造天气、人物、地点、禁忌项/);
+});
+
+test("analysis workflow includes a generation diagnosis before prompt generation", async () => {
+  const aiSource = await readFile(join(process.cwd(), "lib", "ai.ts"), "utf8");
+  const typesSource = await readFile(join(process.cwd(), "types", "index.ts"), "utf8");
+
+  assert.match(typesSource, /GenerationDiagnosis/);
+  for (const field of [
+    "genre",
+    "emotions",
+    "pace",
+    "sceneKeywords",
+    "characterState",
+    "visualFocus",
+    "cameraStrategy",
+    "soundStrategy",
+    "avoid",
+  ]) {
+    assert.match(typesSource, new RegExp(field));
+    assert.match(aiSource, new RegExp(field));
+  }
+
+  assert.match(aiSource, /必须先完成 workflow\.generationDiagnosis/);
+  assert.match(aiSource, /再根据 generationDiagnosis 生成 workflow\.shotPromptText 和 storyboard/);
+  assert.match(aiSource, /总时长、画幅、帧率必须始终输出/);
+  assert.match(aiSource, /其他技术参数只在原文或 generationDiagnosis 能够判断时输出/);
+});
+
 test("analysis types include full workflow and complete shot fields", async () => {
   const typesSource = await readFile(join(process.cwd(), "types", "index.ts"), "utf8");
 
   for (const field of [
+    "GenerationDiagnosis",
     "PromptWorkflow",
+    "generationDiagnosis",
     "sourceAnalysis",
     "coreTheme",
     "videoParameterLock",

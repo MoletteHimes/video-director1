@@ -331,6 +331,7 @@ export function DashboardClient() {
   const [storyboardImage, setStoryboardImage] = useState<StoryboardImageState | null>(null);
   const [projectSave, setProjectSave] = useState<ProjectSaveState | null>(null);
   const [resumeProjectId, setResumeProjectId] = useState("");
+  const [resumeVersionId, setResumeVersionId] = useState("");
   const [selectedShot, setSelectedShot] = useState<StoryboardShot | null>(null);
   const [referenceShot, setReferenceShot] = useState<StoryboardShot | null>(null);
   const [selectedLibraryItem, setSelectedLibraryItem] = useState<KnowledgeItem | null>(null);
@@ -366,12 +367,24 @@ export function DashboardClient() {
   useEffect(() => {
     const resumeScript = window.localStorage.getItem("vd_resume_script");
     const resumeProject = window.localStorage.getItem("vd_resume_project_id");
+    const resumeVersion = window.localStorage.getItem("vd_resume_version_id");
+    if (resumeProject && !resumeScript) {
+      setScript("");
+      setResumeProjectId(resumeProject || "");
+      setResumeVersionId("");
+      setGenerationProgress("已选择历史项目，新输入文案后会生成下一集。");
+      window.localStorage.removeItem("vd_resume_project_id");
+      window.localStorage.removeItem("vd_resume_version_id");
+      return;
+    }
     if (resumeScript) {
       setScript(resumeScript);
       setResumeProjectId(resumeProject || "");
-      setGenerationProgress(resumeProject ? "已载入历史项目，可修改后重新生成新版本。" : "已载入历史文案，可继续编辑。");
+      setResumeVersionId(resumeVersion || "");
+      setGenerationProgress(resumeVersion ? "已载入当前剧集，可修改后重新生成这一集。" : "已载入历史文案，可继续编辑。");
       window.localStorage.removeItem("vd_resume_script");
       window.localStorage.removeItem("vd_resume_project_id");
+      window.localStorage.removeItem("vd_resume_version_id");
     }
   }, []);
 
@@ -391,6 +404,7 @@ export function DashboardClient() {
     analysisResult: AnalysisResult,
     fullVideoPrompt: string,
     projectId: string | undefined = resumeProjectId || undefined,
+    versionId: string | undefined = resumeVersionId || undefined,
   ): Promise<ProjectSaveState> {
     try {
       const res = await fetch("/api/projects", {
@@ -398,6 +412,7 @@ export function DashboardClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
+          versionId,
           originalScript,
           result: analysisResult,
           fullVideoPrompt,
@@ -480,7 +495,7 @@ export function DashboardClient() {
           setGenerationProgress(`正在生成第 ${segment.index} / ${segments.length} 段...`);
           const segmentResult = await requestAnalysis(segment.text, 15);
           const fullVideoPrompt = buildVideoGenerationPromptText(segmentResult);
-          const save = await saveAnalysisProject(segment.text, segmentResult, fullVideoPrompt, activeProjectId || undefined);
+          const save = await saveAnalysisProject(segment.text, segmentResult, fullVideoPrompt, activeProjectId || undefined, undefined);
           setProjectSave(save);
           if (save.projectId) {
             activeProjectId = save.projectId;
@@ -505,6 +520,7 @@ export function DashboardClient() {
       const save = await saveAnalysisProject(script, singleResult, fullVideoPrompt);
       setProjectSave(save);
       if (save.projectId) setResumeProjectId(save.projectId);
+      if (save.versionId) setResumeVersionId(save.versionId);
       setResult(singleResult);
       setGenerationProgress("生成完成。");
     } catch (err: any) {

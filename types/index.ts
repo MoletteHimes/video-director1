@@ -40,8 +40,21 @@ export type StoryboardShot = {
   concisePrompt?: string;
 };
 
+export type GenerationDiagnosis = {
+  genre?: string;
+  emotions?: string[];
+  pace?: string;
+  sceneKeywords?: string[];
+  characterState?: string;
+  visualFocus?: string[];
+  cameraStrategy?: string;
+  soundStrategy?: string;
+  avoid?: string[];
+};
+
 export type PromptWorkflow = {
   sourceAnalysis: string;
+  generationDiagnosis?: GenerationDiagnosis;
   coreTheme?: string;
   videoParameterLock?: string;
   screenplay: string;

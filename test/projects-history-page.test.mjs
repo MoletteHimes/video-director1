@@ -56,8 +56,9 @@ test("projects page shows saved prompt history and supports resume editing", () 
   assert.match(page, /<Sidebar \/>/);
   assert.match(page, /<ProjectsClient \/>/);
   assert.match(client, /我的项目/);
-  assert.match(client, /版本/);
+  assert.match(client, /第 \{version\.versionNumber\} 集/);
   assert.match(client, /storyboardImageUrl/);
   assert.match(client, /vd_resume_script/);
+  assert.match(client, /vd_resume_version_id/);
   assert.match(client, /下载 DOCX/);
 });

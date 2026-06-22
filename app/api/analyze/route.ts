@@ -10,6 +10,7 @@ export const runtime = "nodejs";
 const RequestSchema = z.object({
   script: z.string().min(5).max(12000),
   projectId: z.string().uuid().optional(),
+  versionId: z.string().uuid().optional(),
   contentType: z.string().default("自动识别"),
   style: z.string().default("自动匹配文案气质"),
   duration: z.string().default("15秒"),
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
 
     let saveMeta: any = { saved: false };
     if (body.save) {
-      saveMeta = await saveAnalysisProjectToNest(request, body.script, result, body.projectId);
+      saveMeta = await saveAnalysisProjectToNest(request, body.script, result, body.projectId, body.versionId);
     }
 
     logger.info("api_request_completed", {
