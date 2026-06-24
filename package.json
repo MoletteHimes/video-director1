@@ -13,6 +13,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "library:import": "node scripts/import-knowledge-items-to-prisma.mjs",
+    "admin:promote": "node scripts/promote-admin.mjs",
     "infra:check": "node scripts/check-api-infra.mjs",
     "docker:up": "docker compose up -d postgres redis",
     "lint": "next lint",

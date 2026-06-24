@@ -17,6 +17,11 @@ enum UserPlan {
   PRO
 }
 
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
 enum KnowledgeType {
   TRANSITION
   SHOT
@@ -58,6 +63,10 @@ model User {
   credits      Int           @default(0)
   dailyLimit   Int           @default(3)
   promptPreferences Json?
+  status       UserStatus    @default(ACTIVE)
+  lastLoginAt  DateTime?
+  loginCount   Int           @default(0)
+  note         String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   projects     Project[]
@@ -117,6 +126,7 @@ model ProjectVersion {
   status                String           @default("draft")
   storyboardImageUrl    String?
   storyboardImagePrompt String?
+  videoPromptText       String?
   fullVideoPrompt       String?
   episodeSummary        String?
   endingState           String?

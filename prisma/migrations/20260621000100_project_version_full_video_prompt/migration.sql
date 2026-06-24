@@ -1,2 +1,1 @@
-ALTER TABLE "ProjectVersion"
-ADD COLUMN IF NOT EXISTS "fullVideoPrompt" TEXT;
+ALTER TABLE "ProjectVersion" ADD COLUMN "fullVideoPrompt" TEXT;

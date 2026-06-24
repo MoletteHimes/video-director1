@@ -17,14 +17,14 @@ import {
 } from "./code-utils";
 import { hashPassword, verifyPassword } from "./password";
 
-type PublicUser = Omit<User, "passwordHash">;
+type PublicUser = Omit<User, "passwordHash" | "note">;
 type CaptchaRecord = {
   answerHash: string;
   expiresAt: number;
 };
 
 function toPublicUser(user: User): PublicUser {
-  const { passwordHash: _passwordHash, ...rest } = user;
+  const { passwordHash: _passwordHash, note: _note, ...rest } = user;
   return rest;
 }
 
@@ -110,8 +110,19 @@ export class AuthService {
     if (!user || !(await verifyPassword(input.password, user.passwordHash))) {
       throw new UnauthorizedException("Invalid account or password");
     }
+    if (user.status === "DISABLED") {
+      throw new UnauthorizedException("Account is disabled");
+    }
 
-    return this.createAuthResponse(user);
+    const activeUser = await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        lastLoginAt: new Date(),
+        loginCount: { increment: 1 },
+      },
+    });
+
+    return this.createAuthResponse(activeUser);
   }
 
   async resetPassword(input: ResetPasswordDto) {
@@ -138,6 +149,7 @@ export class AuthService {
   async getCurrentUser(userId: string) {
     const user = await this.prisma.user.findFirst({ where: { id: userId } });
     if (!user) throw new UnauthorizedException("User not found");
+    if (user.status === "DISABLED") throw new UnauthorizedException("Account is disabled");
     return toPublicUser(user);
   }
 
