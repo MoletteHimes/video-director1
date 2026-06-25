@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { IsArray, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUUID, ValidateNested } from "class-validator";
+import { IsArray, IsBoolean, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUUID, ValidateNested } from "class-validator";
 
 export class CreateStoryboardShotDto {
   @IsNumber()
@@ -122,6 +122,22 @@ export class CreateProjectDto {
   @IsObject()
   contextSnapshot?: Record<string, unknown>;
 
+  @IsOptional()
+  @IsObject()
+  narrativeMemory?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  stateVector?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsArray()
+  openLoops?: unknown[];
+
+  @IsOptional()
+  @IsObject()
+  qualityCheck?: Record<string, unknown>;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateStoryboardShotDto)
@@ -140,4 +156,68 @@ export class SaveStoryboardImageDto {
 export class BuildProjectContextDto {
   @IsString()
   currentScript!: string;
+}
+
+export class UpdateProjectMemoryDto {
+  @IsOptional()
+  @IsObject()
+  storyBible?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  contextSummary?: string;
+
+  @IsOptional()
+  @IsObject()
+  stateVector?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsArray()
+  openLoops?: unknown[];
+}
+
+export class UpdateCharacterProfileDto {
+  @IsOptional()
+  @IsString()
+  role?: string;
+
+  @IsOptional()
+  @IsString()
+  appearance?: string;
+
+  @IsOptional()
+  @IsString()
+  personality?: string;
+
+  @IsOptional()
+  @IsString()
+  relationshipState?: string;
+
+  @IsOptional()
+  @IsString()
+  visualLock?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  locked?: boolean;
+}
+
+export class UpdateStoryLoopDto {
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+}
+
+export class UpdateMemoryItemDto {
+  @IsOptional()
+  @IsString()
+  content?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isEnabled?: boolean;
 }

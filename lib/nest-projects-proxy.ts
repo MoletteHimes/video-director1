@@ -24,6 +24,10 @@ type ProjectCreatePayload = Record<string, unknown> & {
   characterState: string | undefined;
   memoryJson: Record<string, unknown> | undefined;
   contextSnapshot: Record<string, unknown> | undefined;
+  narrativeMemory: Record<string, unknown> | undefined;
+  stateVector: Record<string, unknown> | undefined;
+  openLoops: unknown[] | undefined;
+  qualityCheck: Record<string, unknown> | undefined;
   directorContext: string | undefined;
   shots: unknown[] | undefined;
   result: AnalysisResult | undefined;
@@ -46,6 +50,8 @@ type NestResponse = Record<string, unknown> & {
   message: string | string[] | undefined;
 };
 
+const NARRATIVE_STATE_FIELDS = ["stateVector", "openLoops", "narrativeMemory", "qualityCheck"];
+
 function getNestApiBaseUrl() {
   return (process.env.NEST_API_BASE_URL || "http://localhost:4000/api").replace(/\/+$/, "");
 }
@@ -66,6 +72,48 @@ async function readJson(response: Response): Promise<NestResponse | null> {
 function getBearerToken(request: NextRequest) {
   const cookie = request.cookies.get(NEST_AUTH_TOKEN_COOKIE);
   return cookie ? cookie.value : undefined;
+}
+
+function responseMessageText(payload: NestResponse | null) {
+  const message = payload?.message || payload?.error || "";
+  return Array.isArray(message) ? message.join("; ") : String(message);
+}
+
+function shouldRetryWithoutNarrativeState(upstream: Response, payload: NestResponse | null) {
+  if (upstream.status !== 400) return false;
+  const message = responseMessageText(payload);
+  return NARRATIVE_STATE_FIELDS.some((field) => message.includes(`property ${field} should not exist`));
+}
+
+function omitNarrativeStateFields(body: Record<string, unknown>) {
+  const next = { ...body };
+  for (const field of NARRATIVE_STATE_FIELDS) {
+    delete next[field];
+  }
+  return next;
+}
+
+async function postProjectToNest(token: string, body: Record<string, unknown>) {
+  const upstream = await fetch(`${getNestApiBaseUrl()}/projects`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  const payload = await readJson(upstream);
+  return { upstream, payload };
+}
+
+async function postProjectToNestWithCompatibility(token: string, body: Record<string, unknown>) {
+  const first = await postProjectToNest(token, body);
+  if (!shouldRetryWithoutNarrativeState(first.upstream, first.payload)) {
+    return first;
+  }
+
+  return postProjectToNest(token, omitNarrativeStateFields(body));
 }
 
 function mapShotToNestProjectBody(shot: StoryboardShot) {
@@ -106,6 +154,10 @@ function uniqueStrings(values: unknown[], limit = 12) {
     if (result.length >= limit) break;
   }
   return result;
+}
+
+function getToneScore(values: string[], patterns: RegExp[]) {
+  return values.some((value) => patterns.some((pattern) => pattern.test(value))) ? 0.75 : 0.25;
 }
 
 function deriveProjectMemoryFromAnalysis(originalScript: string | undefined, result: AnalysisResult) {
@@ -163,6 +215,18 @@ function deriveProjectMemoryFromAnalysis(originalScript: string | undefined, res
       transition: cleanText(shot.transition, 80),
     })),
   };
+  const stateVector = {
+    mysteryProgress: Math.min(1, Math.max(0.15, (sceneKeywords.length + visualFocus.length) / 20)),
+    tension: getToneScore(emotions, [/紧张|压抑|惊悚|悬疑|危险|焦虑|恐惧/]),
+    fear: getToneScore(emotions, [/恐惧|惊悚|害怕|不安|危险|压迫/]),
+    hope: getToneScore(emotions, [/希望|释然|温暖|治愈|平静/]),
+    pacing: shots.length >= 4 ? 0.7 : 0.45,
+  };
+  const openLoops = uniqueStrings([
+    ...visualFocus,
+    ...sceneKeywords,
+    endingState,
+  ], 8);
   const storyBible = {
     genre: diagnosis?.genre || result.contentType,
     visualStyle: result.style,
@@ -176,6 +240,50 @@ function deriveProjectMemoryFromAnalysis(originalScript: string | undefined, res
     characterState,
     keyEvents: episodeSummary ? [episodeSummary] : [],
   };
+  const narrativeMemory = {
+    episodeSummary,
+    endingState,
+    characterState,
+    stateVector,
+    openLoops,
+    characters: characterState
+      ? [{
+          name: "Main character",
+          role: "protagonist",
+          personality: characterState,
+          importance: 0.75,
+        }]
+      : [],
+    storyLoops: openLoops.map((loop) => ({
+      title: loop,
+      description: loop,
+      importance: 0.6,
+    })),
+    memoryItems: [
+      episodeSummary ? {
+        type: "EVENT",
+        title: result.title,
+        content: episodeSummary,
+        keywords: [result.title, result.contentType, ...emotions],
+        importance: 0.8,
+      } : null,
+      endingState ? {
+        type: "CLUE",
+        title: "Ending state",
+        content: endingState,
+        keywords: [...visualFocus, ...sceneKeywords],
+        importance: 0.85,
+      } : null,
+    ].filter(Boolean),
+  };
+  const qualityCheck = {
+    status: "unchecked",
+    characterConsistency: characterState ? "tracked" : "not_enough_character_data",
+    loopContinuity: openLoops.length ? "open_loops_tracked" : "no_open_loops_detected",
+    previousEndingContinuity: "not_checked_by_ai",
+    issues: [],
+    suggestions: [],
+  };
 
   return {
     storyBible,
@@ -183,6 +291,10 @@ function deriveProjectMemoryFromAnalysis(originalScript: string | undefined, res
     endingState,
     characterState,
     memoryJson,
+    narrativeMemory,
+    stateVector,
+    openLoops,
+    qualityCheck,
     contextSummary: [storyBible.genre, storyBible.visualStyle, endingState].filter(Boolean).join(" · "),
   };
 }
@@ -250,6 +362,10 @@ export function mapAnalysisResultToNestProjectBody(input: Record<string, unknown
     endingState: payload.endingState || memory.endingState,
     characterState: payload.characterState || memory.characterState,
     memoryJson: payload.memoryJson || memory.memoryJson,
+    narrativeMemory: payload.narrativeMemory || memory.narrativeMemory,
+    stateVector: payload.stateVector || memory.stateVector,
+    openLoops: payload.openLoops || memory.openLoops,
+    qualityCheck: payload.qualityCheck || memory.qualityCheck,
     contextSnapshot: payload.contextSnapshot || (payload.directorContext ? { directorContext: payload.directorContext } : undefined),
     shots: payload.result.storyboard.map(mapShotToNestProjectBody),
   };
@@ -387,13 +503,14 @@ export async function proxyNestProjectVersionDelete(request: NextRequest, projec
   return NextResponse.json({ ok: true, delete: getNestResponseData(payload) || { deleted: true, projectId, versionId } });
 }
 
-export async function proxyNestProjectsPost(request: NextRequest) {
+export async function proxyNestProjectPatch(request: NextRequest, projectId: string, subPath: string) {
   const token = getBearerToken(request);
   if (!token) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
-  const body = mapAnalysisResultToNestProjectBody((await request.json()) as Record<string, unknown>);
-  const upstream = await fetch(`${getNestApiBaseUrl()}/projects`, {
-    method: "POST",
+  const body = await request.json().catch(() => ({}));
+  const cleanSubPath = subPath.replace(/^\/+|\/+$/g, "");
+  const upstream = await fetch(`${getNestApiBaseUrl()}/projects/${projectId}/${cleanSubPath}`, {
+    method: "PATCH",
     headers: {
       Authorization: `Bearer ${token}`,
       "content-type": "application/json",
@@ -402,6 +519,23 @@ export async function proxyNestProjectsPost(request: NextRequest) {
     cache: "no-store",
   });
   const payload = await readJson(upstream);
+
+  if (!upstream.ok || !payload || !payload.ok) {
+    return NextResponse.json(
+      { ok: false, error: formatUpstreamError(payload, "Project memory update failed") },
+      { status: upstream.status || 502 },
+    );
+  }
+
+  return NextResponse.json({ ok: true, data: getNestResponseData(payload) || { saved: true } });
+}
+
+export async function proxyNestProjectsPost(request: NextRequest) {
+  const token = getBearerToken(request);
+  if (!token) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+
+  const body = mapAnalysisResultToNestProjectBody((await request.json()) as Record<string, unknown>);
+  const { upstream, payload } = await postProjectToNestWithCompatibility(token, body);
 
   if (!upstream.ok || !payload || !payload.ok) {
     return NextResponse.json(
@@ -424,16 +558,7 @@ export async function saveAnalysisProjectToNest(
   if (!token) return { saved: false, reason: "Unauthorized" };
 
   const body = mapAnalysisResultToNestProjectBody({ projectId, versionId, originalScript, result });
-  const upstream = await fetch(`${getNestApiBaseUrl()}/projects`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
-  const payload = await readJson(upstream);
+  const { upstream, payload } = await postProjectToNestWithCompatibility(token, body);
 
   if (!upstream.ok || !payload || !payload.ok) {
     return {

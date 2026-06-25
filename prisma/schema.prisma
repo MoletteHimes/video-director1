@@ -22,6 +22,24 @@ enum UserStatus {
   DISABLED
 }
 
+enum MemoryItemType {
+  CHARACTER
+  RELATIONSHIP
+  OBJECT
+  SCENE
+  EVENT
+  CLUE
+  STYLE
+  WORLD_RULE
+  QUALITY_CHECK
+}
+
+enum StoryLoopStatus {
+  OPEN
+  RESOLVED
+  DROPPED
+}
+
 enum KnowledgeType {
   TRANSITION
   SHOT
@@ -74,6 +92,9 @@ model User {
   usageEvents  UsageEvent[]
   jobs         Job[]
   verificationCodes VerificationCode[]
+  memoryItems  MemoryItem[]
+  characterProfiles CharacterProfile[]
+  storyLoops   StoryLoop[]
 }
 
 model VerificationCode {
@@ -103,12 +124,17 @@ model Project {
   status          String           @default("draft")
   storyBible      Json?
   contextSummary  String?
+  stateVector     Json?
+  openLoops       Json?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   versions        ProjectVersion[]
   shots           StoryboardShot[]
   jobs            Job[]
+  memoryItems     MemoryItem[]
+  characterProfiles CharacterProfile[]
+  storyLoops      StoryLoop[]
 
   @@index([userId, createdAt])
 }
@@ -133,12 +159,94 @@ model ProjectVersion {
   characterState        String?
   memoryJson            Json?
   contextSnapshot       Json?
+  stateVector           Json?
+  openLoops             Json?
+  qualityCheck          Json?
   createdAt             DateTime         @default(now())
   project               Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   shots                 StoryboardShot[]
+  memoryItems           MemoryItem[]
 
   @@unique([projectId, versionNumber])
   @@index([projectId, createdAt])
+}
+
+model MemoryItem {
+  id         String         @id @default(uuid()) @db.Uuid
+  userId     String         @db.Uuid
+  projectId  String         @db.Uuid
+  versionId  String?        @db.Uuid
+  type       MemoryItemType
+  title      String?
+  content    String
+  keywords   Json?
+  importance Float          @default(0.5)
+  recency    Float          @default(0)
+  metadata   Json?
+  embedding  Json?
+  embeddingVector Unsupported("vector")?
+  isEnabled  Boolean        @default(true)
+  source     String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project    Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  version    ProjectVersion? @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([projectId, type])
+  @@index([projectId, isEnabled])
+  @@index([versionId])
+}
+
+model CharacterProfile {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @db.Uuid
+  projectId         String   @db.Uuid
+  name              String
+  aliases           String[] @default([])
+  role              String?
+  appearance        String?
+  personality       String?
+  relationshipState String?
+  visualLock        String?
+  referenceImageUrl String?
+  importance        Float    @default(0.5)
+  locked            Boolean  @default(false)
+  firstSeenVersionId String? @db.Uuid
+  lastSeenVersionId  String? @db.Uuid
+  metadata          Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
+  @@index([userId, projectId])
+  @@index([projectId, importance])
+}
+
+model StoryLoop {
+  id                 String          @id @default(uuid()) @db.Uuid
+  userId             String          @db.Uuid
+  projectId          String          @db.Uuid
+  createdVersionId   String?         @db.Uuid
+  resolvedVersionId  String?         @db.Uuid
+  title              String
+  description        String?
+  status             StoryLoopStatus @default(OPEN)
+  importance         Float           @default(0.6)
+  evidence           Json?
+  metadata           Json?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project            Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, title])
+  @@index([userId, projectId])
+  @@index([projectId, status])
+  @@index([projectId, importance])
 }
 
 model StoryboardShot {

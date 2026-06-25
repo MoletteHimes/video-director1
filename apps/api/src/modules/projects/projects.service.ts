@@ -1,7 +1,15 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
+import { MemoryItemType, StoryLoopStatus } from "@prisma/client";
 import type { Prisma, Project } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
-import type { CreateProjectDto, SaveStoryboardImageDto } from "./projects.dto";
+import type {
+  CreateProjectDto,
+  SaveStoryboardImageDto,
+  UpdateCharacterProfileDto,
+  UpdateMemoryItemDto,
+  UpdateProjectMemoryDto,
+  UpdateStoryLoopDto,
+} from "./projects.dto";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -11,6 +19,8 @@ const DEFAULT_PROMPT_PREFERENCES: JsonRecord = {
   frameRate: "24fps",
   output: ["video_prompt", "storyboard", "docx"],
 };
+
+const MEMORY_RETRIEVAL_LIMIT = 8;
 
 function cleanText(value: unknown, maxLength = 500) {
   if (typeof value !== "string") return undefined;
@@ -37,13 +47,71 @@ function uniqueStrings(values: Array<unknown>, limit = 12) {
   return result;
 }
 
-function toJson(value: JsonRecord | undefined): Prisma.InputJsonValue | undefined {
-  if (!value) return undefined;
+function toJson(value: unknown): Prisma.InputJsonValue | undefined {
+  if (value === undefined || value === null) return undefined;
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
 function pickRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonRecord) : {};
+}
+
+function asStringArray(value: unknown, limit = 20) {
+  return Array.isArray(value) ? uniqueStrings(value, limit) : [];
+}
+
+function asNumber(value: unknown, fallback = 0) {
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function clamp01(value: unknown, fallback = 0.5) {
+  return Math.min(1, Math.max(0, asNumber(value, fallback)));
+}
+
+function asNumberArray(value: unknown, limit = 64) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item))
+    .slice(0, limit);
+}
+
+function hashText(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function buildLocalEmbedding(value: unknown, dimensions = 64) {
+  const text = String(value || "").toLowerCase();
+  const vector = Array.from({ length: dimensions }, () => 0);
+  const tokens = text.match(/[\u4e00-\u9fa5]{2,}|[a-z0-9]{3,}/gi) || [];
+  for (const token of tokens) {
+    const hash = hashText(token);
+    const index = hash % dimensions;
+    vector[index] += (hash % 2 === 0 ? 1 : -1) * Math.min(1, token.length / 12);
+  }
+  const norm = Math.sqrt(vector.reduce((sum, item) => sum + item * item, 0)) || 1;
+  return vector.map((item) => Number((item / norm).toFixed(6)));
+}
+
+function cosineSimilarity(left: number[], right: number[]) {
+  const length = Math.min(left.length, right.length);
+  if (!length) return 0;
+  let dot = 0;
+  let leftNorm = 0;
+  let rightNorm = 0;
+  for (let index = 0; index < length; index += 1) {
+    dot += left[index] * right[index];
+    leftNorm += left[index] * left[index];
+    rightNorm += right[index] * right[index];
+  }
+  if (!leftNorm || !rightNorm) return 0;
+  return Math.max(0, dot / Math.sqrt(leftNorm * rightNorm));
 }
 
 function deriveEpisodeMemory(input: CreateProjectDto) {
@@ -99,11 +167,320 @@ function deriveEpisodeMemory(input: CreateProjectDto) {
   };
 }
 
+function asRecords(value: unknown, limit = 20) {
+  return Array.isArray(value)
+    ? value
+        .filter((item) => item && typeof item === "object" && !Array.isArray(item))
+        .slice(0, limit) as JsonRecord[]
+    : [];
+}
+
+function deriveNarrativeMemory(input: CreateProjectDto, memory: ReturnType<typeof deriveEpisodeMemory>) {
+  const explicit = pickRecord(input.narrativeMemory);
+  const memoryJson = pickRecord(memory.memoryJson);
+  const explicitStateVector = pickRecord(explicit.stateVector);
+  const explicitOpenLoops = asStringArray(explicit.openLoops, 20);
+  const baseStateVector = deriveStateVector(input, memory);
+  const baseOpenLoops = deriveOpenLoops(input, memory);
+  const characters = asRecords(explicit.characters, 20);
+  const storyLoops = asRecords(explicit.storyLoops, 20);
+  const memoryItems = asRecords(explicit.memoryItems, 40);
+  const resolvedLoops = asStringArray(explicit.resolvedLoops, 20);
+
+  const fallbackCharacter =
+    cleanText(memory.characterState, 200)
+      ? [{
+          name: cleanText(pickRecord(memoryJson).mainCharacter, 80) || "Main character",
+          role: "protagonist",
+          appearance: cleanText(input.storyBible?.mainCharacter, 220),
+          personality: cleanText(memory.characterState, 220),
+          importance: 0.75,
+        }]
+      : [];
+
+  return {
+    episodeSummary: cleanText(explicit.episodeSummary, 900) || memory.episodeSummary,
+    endingState: cleanText(explicit.endingState, 400) || memory.endingState,
+    characterState: cleanText(explicit.characterState, 300) || memory.characterState,
+    stateVector: {
+      ...baseStateVector,
+      ...explicitStateVector,
+    },
+    openLoops: uniqueStrings([...explicitOpenLoops, ...baseOpenLoops], 20),
+    characters: characters.length ? characters : fallbackCharacter,
+    storyLoops,
+    resolvedLoops,
+    memoryItems,
+  } satisfies JsonRecord;
+}
+
+function deriveStateVector(input: CreateProjectDto, memory: ReturnType<typeof deriveEpisodeMemory>) {
+  const explicit = pickRecord(input.stateVector);
+  const memoryJson = pickRecord(memory.memoryJson);
+  const emotions = asStringArray(memoryJson.emotions);
+  const hasTone = (patterns: RegExp[]) => emotions.some((emotion) => patterns.some((pattern) => pattern.test(emotion)));
+  const shotCount = input.shots?.length || 0;
+
+  return {
+    mysteryProgress: Math.min(1, Math.max(0.15, asStringArray(memoryJson.scenes).length / 10)),
+    tension: hasTone([/紧张|压抑|惊悚|悬疑|危险|焦虑|恐惧/]) ? 0.75 : 0.35,
+    fear: hasTone([/恐惧|惊悚|害怕|不安|危险|压迫/]) ? 0.7 : 0.25,
+    hope: hasTone([/希望|释然|温暖|治愈|平静/]) ? 0.65 : 0.2,
+    pacing: shotCount >= 4 ? 0.7 : 0.45,
+    ...explicit,
+  } satisfies JsonRecord;
+}
+
+function deriveOpenLoops(input: CreateProjectDto, memory: ReturnType<typeof deriveEpisodeMemory>) {
+  const explicit = uniqueStrings(input.openLoops || [], 12);
+  if (explicit.length) return explicit;
+
+  const memoryJson = pickRecord(memory.memoryJson);
+  return uniqueStrings([
+    ...(asStringArray(memoryJson.visualFocus, 8)),
+    ...(asStringArray(memoryJson.scenes, 8)),
+    memory.endingState,
+  ], 12);
+}
+
+function makeMemoryItem(params: {
+  userId: string;
+  projectId: string;
+  versionId: string;
+  type: MemoryItemType;
+  title: string;
+  content: string | undefined;
+  keywords?: unknown[];
+  importance?: number;
+  recency?: number;
+  metadata?: JsonRecord;
+}): Prisma.MemoryItemCreateManyInput | null {
+  const content = cleanText(params.content, 700);
+  if (!content) return null;
+
+  return {
+    userId: params.userId,
+    projectId: params.projectId,
+    versionId: params.versionId,
+    type: params.type,
+    title: cleanText(params.title, 120),
+    content,
+    keywords: toJson(uniqueStrings(params.keywords || [], 16)),
+    importance: params.importance ?? 0.5,
+    recency: params.recency ?? 1,
+    metadata: toJson(params.metadata),
+    embedding: toJson(buildLocalEmbedding(content)),
+    isEnabled: true,
+    source: "episode_extractor",
+  };
+}
+
+function deriveMemoryItems(
+  input: CreateProjectDto,
+  memory: ReturnType<typeof deriveEpisodeMemory>,
+  projectId: string,
+  userId: string,
+  versionId: string,
+) {
+  const memoryJson = pickRecord(memory.memoryJson);
+  const scenes = asStringArray(memoryJson.scenes, 8);
+  const visualFocus = asStringArray(memoryJson.visualFocus, 8);
+  const emotions = asStringArray(memoryJson.emotions, 8);
+  const cameraMovements = asStringArray(memoryJson.cameraMovements, 8);
+  const transitions = asStringArray(memoryJson.transitions, 8);
+  const explicitMemoryItems = asRecords(pickRecord(input.narrativeMemory).memoryItems, 40);
+  const base = { userId, projectId, versionId };
+  const items: Array<Prisma.MemoryItemCreateManyInput | null> = [
+    makeMemoryItem({
+      ...base,
+      type: MemoryItemType.EVENT,
+      title: `Episode ${input.title}`,
+      content: memory.episodeSummary,
+      keywords: [input.title, input.contentType, ...emotions],
+      importance: 0.8,
+    }),
+    makeMemoryItem({
+      ...base,
+      type: MemoryItemType.CHARACTER,
+      title: "Character state",
+      content: memory.characterState,
+      keywords: emotions,
+      importance: 0.7,
+    }),
+    makeMemoryItem({
+      ...base,
+      type: MemoryItemType.CLUE,
+      title: "Ending state",
+      content: memory.endingState,
+      keywords: [...visualFocus, ...scenes],
+      importance: 0.85,
+    }),
+    makeMemoryItem({
+      ...base,
+      type: MemoryItemType.STYLE,
+      title: "Visual style",
+      content: [input.style, input.contentType, ...cameraMovements, ...transitions].filter(Boolean).join(" "),
+      keywords: [input.style, input.contentType, ...cameraMovements, ...transitions],
+      importance: 0.55,
+    }),
+    makeMemoryItem({
+      ...base,
+      type: MemoryItemType.QUALITY_CHECK,
+      title: "Quality check",
+      content: JSON.stringify(pickRecord(input.qualityCheck || pickRecord(input.narrativeMemory).qualityCheck || {})),
+      keywords: ["quality", "consistency", input.title],
+      importance: 0.45,
+      metadata: { source: "quality_check" },
+    }),
+  ];
+
+  for (const scene of scenes) {
+    items.push(makeMemoryItem({
+      ...base,
+      type: MemoryItemType.SCENE,
+      title: "Scene",
+      content: scene,
+      keywords: [scene, input.contentType, input.style],
+      importance: 0.6,
+    }));
+  }
+
+  for (const focus of visualFocus) {
+    items.push(makeMemoryItem({
+      ...base,
+      type: MemoryItemType.OBJECT,
+      title: "Visual focus",
+      content: focus,
+      keywords: [focus, input.contentType, input.style],
+      importance: 0.65,
+    }));
+  }
+
+  for (const item of explicitMemoryItems) {
+    const typeText = cleanText(item.type, 40)?.toUpperCase();
+    const type = typeText && typeText in MemoryItemType
+      ? MemoryItemType[typeText as keyof typeof MemoryItemType]
+      : MemoryItemType.EVENT;
+    items.push(makeMemoryItem({
+      ...base,
+      type,
+      title: cleanText(item.title, 120) || "Narrative memory",
+      content: cleanText(item.content, 700),
+      keywords: asStringArray(item.keywords, 16),
+      importance: clamp01(item.importance, 0.65),
+      metadata: {
+        source: "narrative_memory",
+        ...pickRecord(item.metadata),
+      },
+    }));
+  }
+
+  return items.filter(Boolean) as Prisma.MemoryItemCreateManyInput[];
+}
+
+function scoreMemoryItem(memory: {
+  title: string | null;
+  content: string;
+  keywords: Prisma.JsonValue | null;
+  importance: number;
+  recency: number;
+  metadata: Prisma.JsonValue | null;
+  embedding?: Prisma.JsonValue | null;
+}, currentScript: string, index = 0, queryEmbedding = buildLocalEmbedding(currentScript)) {
+  const script = compactText(currentScript);
+  if (!script) return 0;
+
+  const keywords = asStringArray(memory.keywords, 20);
+  const haystack = compactText([memory.title, memory.content, keywords.join(" "), JSON.stringify(memory.metadata || {})].join(" "));
+  const tokens = Array.from(new Set(script.match(/[\u4e00-\u9fa5]{2,}|[a-z0-9]{3,}/gi) || []));
+  let matches = 0;
+  for (const token of tokens) {
+    if (haystack.includes(compactText(token))) matches += 1;
+  }
+
+  const relevance = tokens.length ? Math.min(1, matches / Math.min(tokens.length, 12)) : 0;
+  const semantic = cosineSimilarity(asNumberArray(memory.embedding), queryEmbedding);
+  const recency = Math.max(memory.recency || 0, 1 / (index + 1));
+  return memory.importance * 0.5 + Math.max(relevance, semantic) * 0.4 + recency * 0.1;
+}
+
 function appendUnique(existing: unknown, additions: unknown[], limit = 30) {
   return uniqueStrings([...(Array.isArray(existing) ? existing : []), ...additions], limit);
 }
 
-function mergeStoryBible(existingValue: unknown, input: CreateProjectDto, memory: ReturnType<typeof deriveEpisodeMemory>) {
+function deriveCharacterProfiles(input: CreateProjectDto, narrativeMemory: JsonRecord) {
+  const characters = asRecords(narrativeMemory.characters, 20);
+  return characters
+    .map((character) => ({
+      name: cleanText(character.name, 80) || cleanText(character.title, 80),
+      aliases: asStringArray(character.aliases, 12),
+      role: cleanText(character.role, 120),
+      appearance: cleanText(character.appearance, 500),
+      personality: cleanText(character.personality || character.characterState, 500),
+      relationshipState: cleanText(character.relationshipState, 500),
+      visualLock: cleanText(character.visualLock || character.consistencyLock, 700),
+      referenceImageUrl: cleanText(character.referenceImageUrl, 500),
+      importance: clamp01(character.importance, 0.6),
+      locked: Boolean(character.locked),
+      metadata: {
+        sourceTitle: input.title,
+        contentType: input.contentType,
+        style: input.style,
+        raw: character,
+      },
+    }))
+    .filter((character) => character.name);
+}
+
+function deriveStoryLoops(input: CreateProjectDto, narrativeMemory: JsonRecord) {
+  const openLoopRecords = asRecords(narrativeMemory.storyLoops, 20);
+  const openLoopStrings = asStringArray(narrativeMemory.openLoops, 20);
+  const openLoops = [
+    ...openLoopRecords.map((loop) => ({
+      title: cleanText(loop.title, 140) || cleanText(loop.content, 140),
+      description: cleanText(loop.description || loop.content, 700),
+      importance: clamp01(loop.importance, 0.65),
+      evidence: loop.evidence,
+      metadata: {
+        sourceTitle: input.title,
+        raw: loop,
+      },
+    })),
+    ...openLoopStrings.map((loop) => ({
+      title: loop,
+      description: loop,
+      importance: 0.6,
+      evidence: undefined,
+      metadata: { sourceTitle: input.title },
+    })),
+  ].filter((loop) => loop.title);
+
+  const resolvedLoops = asStringArray(narrativeMemory.resolvedLoops, 20).map((title) => ({
+    title,
+    status: StoryLoopStatus.RESOLVED,
+  }));
+
+  return { openLoops, resolvedLoops };
+}
+
+function deriveQualityCheck(input: CreateProjectDto, narrativeMemory: JsonRecord) {
+  const explicit = pickRecord(input.qualityCheck);
+  const stateVector = pickRecord(narrativeMemory.stateVector);
+  const openLoops = asStringArray(narrativeMemory.openLoops, 20);
+  const characters = asRecords(narrativeMemory.characters, 20);
+
+  return {
+    status: cleanText(explicit.status, 40) || "unchecked",
+    characterConsistency: explicit.characterConsistency ?? (characters.length ? "tracked" : "not_enough_character_data"),
+    loopContinuity: explicit.loopContinuity ?? (openLoops.length ? "open_loops_tracked" : "no_open_loops_detected"),
+    pacingRisk: explicit.pacingRisk ?? (clamp01(stateVector.tension, 0.5) > 0.85 ? "high_tension" : "normal"),
+    previousEndingContinuity: explicit.previousEndingContinuity ?? "not_checked_by_ai",
+    issues: asStringArray(explicit.issues, 20),
+    suggestions: asStringArray(explicit.suggestions, 20),
+  } satisfies JsonRecord;
+}
+
+function mergeStoryBible(existingValue: unknown, input: CreateProjectDto, memory: ReturnType<typeof deriveEpisodeMemory>): JsonRecord {
   const existing = pickRecord(existingValue);
   const inputBible = pickRecord(input.storyBible);
   const memoryJson = pickRecord(memory.memoryJson);
@@ -176,8 +553,11 @@ function buildDirectorContextText(input: {
   userPreferences: JsonRecord;
   storyBible: JsonRecord;
   contextSummary: string | null;
+  stateVector: JsonRecord;
+  openLoops: string[];
   recentEpisodes: Array<Record<string, unknown>>;
   relatedEpisodes: Array<Record<string, unknown>>;
+  relatedMemories: Array<Record<string, unknown>>;
 }) {
   const preferenceLines = Object.entries(input.userPreferences).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join("、") : String(value)}`);
   const storyLines = Object.entries(input.storyBible)
@@ -192,6 +572,15 @@ function buildDirectorContextText(input: {
     `第 ${episode.versionNumber} 集：${episode.episodeSummary || episode.title || ""}`,
     episode.endingState ? `相关承接：${episode.endingState}` : "",
   ].filter(Boolean).join("\n"));
+  const stateLines = Object.entries(input.stateVector)
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .map(([key, value]) => `${key}: ${String(value)}`);
+  const openLoopLines = input.openLoops.map((loop, index) => `${index + 1}. ${loop}`);
+  const memoryLines = input.relatedMemories.map((memory) => [
+    `${memory.type || "MEMORY"}：${memory.title || ""}`,
+    memory.content ? String(memory.content) : "",
+    memory.relevanceScore ? `score: ${memory.relevanceScore}` : "",
+  ].filter(Boolean).join("\n"));
 
   return [
     stringifyContextBlock("用户长期偏好", preferenceLines),
@@ -201,11 +590,91 @@ function buildDirectorContextText(input: {
     ]),
     stringifyContextBlock("最近剧集摘要", recentLines),
     stringifyContextBlock("相关历史片段", relatedLines),
+    stringifyContextBlock("剧情状态向量", stateLines),
+    stringifyContextBlock("未解决伏笔", openLoopLines),
+    stringifyContextBlock("相关记忆 Top-K", memoryLines),
     stringifyContextBlock("上下文使用规则", [
       "这些内容只用于保持连续性、人物状态、地点道具和视觉风格一致。",
       "优先服务当前用户输入，不要机械复述历史剧情。",
       "不要把完整历史提示词重排进输出；最终视频提示词仍按当前模板生成。",
       "如果当前文案与历史冲突，保留当前文案，并用自然方式解释承接。",
+    ]),
+  ].filter(Boolean).join("\n\n");
+}
+
+function buildDirectorContextTextV2(input: {
+  userPreferences: JsonRecord;
+  storyBible: JsonRecord;
+  contextSummary: string | null;
+  stateVector: JsonRecord;
+  openLoops: string[];
+  characterProfiles: Array<Record<string, unknown>>;
+  storyLoops: Array<Record<string, unknown>>;
+  recentEpisodes: Array<Record<string, unknown>>;
+  relatedEpisodes: Array<Record<string, unknown>>;
+  relatedMemories: Array<Record<string, unknown>>;
+}) {
+  const block = (title: string, lines: string[]) => {
+    const body = lines.filter(Boolean).join("\n");
+    return body ? `[${title}]\n${body}` : "";
+  };
+  const jsonLine = (key: string, value: unknown) => {
+    if (value === undefined || value === null || value === "") return "";
+    return `${key}: ${Array.isArray(value) ? value.join(", ") : String(value)}`;
+  };
+  const preferenceLines = Object.entries(input.userPreferences).map(([key, value]) => jsonLine(key, value));
+  const storyLines = Object.entries(input.storyBible).map(([key, value]) => jsonLine(key, value));
+  const characterLines = input.characterProfiles.map((character) => [
+    jsonLine("name", character.name),
+    jsonLine("role", character.role),
+    jsonLine("appearance", character.appearance),
+    jsonLine("personality", character.personality),
+    jsonLine("relationship", character.relationshipState),
+    jsonLine("visualLock", character.visualLock),
+  ].filter(Boolean).join("\n"));
+  const loopLines = input.storyLoops.map((loop, index) => [
+    `${index + 1}. ${loop.title || ""}`,
+    jsonLine("description", loop.description),
+    jsonLine("status", loop.status),
+    jsonLine("importance", loop.importance),
+  ].filter(Boolean).join("\n"));
+  const recentLines = input.recentEpisodes.map((episode) => [
+    `episode ${episode.versionNumber}: ${episode.episodeSummary || episode.title || ""}`,
+    jsonLine("endingState", episode.endingState),
+    jsonLine("characterState", episode.characterState),
+  ].filter(Boolean).join("\n"));
+  const relatedLines = input.relatedEpisodes.map((episode) => [
+    `episode ${episode.versionNumber}: ${episode.episodeSummary || episode.title || ""}`,
+    jsonLine("relatedEnding", episode.endingState),
+    jsonLine("score", episode.relevanceScore),
+  ].filter(Boolean).join("\n"));
+  const stateLines = Object.entries(input.stateVector).map(([key, value]) => jsonLine(key, value));
+  const openLoopLines = input.openLoops.map((loop, index) => `${index + 1}. ${loop}`);
+  const memoryLines = input.relatedMemories.map((memory) => [
+    `${memory.type || "MEMORY"}: ${memory.title || ""}`,
+    memory.content ? String(memory.content) : "",
+    jsonLine("score", memory.relevanceScore),
+  ].filter(Boolean).join("\n"));
+
+  return [
+    block("L1 User Profile", preferenceLines),
+    block("L2 Story Bible", [
+      input.contextSummary ? `summary: ${input.contextSummary}` : "",
+      ...storyLines,
+    ]),
+    block("L2 Character Profiles", characterLines),
+    block("L3 Recent Episode Memory", recentLines),
+    block("L3 Related Episode Memory", relatedLines),
+    block("L3 State Vector", stateLines),
+    block("L3 Open Loops", openLoopLines),
+    block("L4 Story Loops", loopLines),
+    block("L4 Top-K Retrieval Memory", memoryLines),
+    block("L5 Working Rules", [
+      "Use these records only to preserve continuity, character state, locations, props, tone, and visual style.",
+      "The current user script has priority over history.",
+      "Do not copy or reformat old fullVideoPrompt text into the new output.",
+      "Keep the existing video prompt output template unchanged.",
+      "If current input conflicts with memory, follow current input and bridge the conflict naturally.",
     ]),
   ].filter(Boolean).join("\n\n");
 }
@@ -252,6 +721,111 @@ function mapShotDetail(shot: {
   };
 }
 
+async function upsertCharacterProfiles(
+  prisma: Prisma.TransactionClient,
+  options: {
+    userId: string;
+    projectId: string;
+    versionId: string;
+    characters: ReturnType<typeof deriveCharacterProfiles>;
+  },
+) {
+  for (const character of options.characters) {
+    if (!character.name) continue;
+    await prisma.characterProfile.upsert({
+      where: {
+        projectId_name: {
+          projectId: options.projectId,
+          name: character.name,
+        },
+      },
+      create: {
+        userId: options.userId,
+        projectId: options.projectId,
+        name: character.name,
+        aliases: character.aliases,
+        role: character.role,
+        appearance: character.appearance,
+        personality: character.personality,
+        relationshipState: character.relationshipState,
+        visualLock: character.visualLock,
+        referenceImageUrl: character.referenceImageUrl,
+        importance: character.importance,
+        locked: character.locked,
+        firstSeenVersionId: options.versionId,
+        lastSeenVersionId: options.versionId,
+        metadata: toJson(character.metadata),
+      },
+      update: {
+        aliases: character.aliases,
+        role: character.role,
+        appearance: character.appearance,
+        personality: character.personality,
+        relationshipState: character.relationshipState,
+        visualLock: character.visualLock,
+        referenceImageUrl: character.referenceImageUrl,
+        importance: character.importance,
+        locked: character.locked,
+        lastSeenVersionId: options.versionId,
+        metadata: toJson(character.metadata),
+      },
+    });
+  }
+}
+
+async function upsertStoryLoops(
+  prisma: Prisma.TransactionClient,
+  options: {
+    userId: string;
+    projectId: string;
+    versionId: string;
+    loops: ReturnType<typeof deriveStoryLoops>;
+  },
+) {
+  for (const loop of options.loops.openLoops) {
+    if (!loop.title) continue;
+    await prisma.storyLoop.upsert({
+      where: {
+        projectId_title: {
+          projectId: options.projectId,
+          title: loop.title,
+        },
+      },
+      create: {
+        userId: options.userId,
+        projectId: options.projectId,
+        createdVersionId: options.versionId,
+        title: loop.title,
+        description: loop.description,
+        status: StoryLoopStatus.OPEN,
+        importance: loop.importance,
+        evidence: toJson(loop.evidence),
+        metadata: toJson(loop.metadata),
+      },
+      update: {
+        description: loop.description,
+        status: StoryLoopStatus.OPEN,
+        importance: loop.importance,
+        evidence: toJson(loop.evidence),
+        metadata: toJson(loop.metadata),
+      },
+    });
+  }
+
+  for (const loop of options.loops.resolvedLoops) {
+    await prisma.storyLoop.updateMany({
+      where: {
+        projectId: options.projectId,
+        title: loop.title,
+      },
+      data: {
+        status: StoryLoopStatus.RESOLVED,
+        resolvedVersionId: options.versionId,
+      },
+    });
+  }
+}
+
 @Injectable()
 export class ProjectsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -292,8 +866,55 @@ export class ProjectsService {
         status: true,
         storyBible: true,
         contextSummary: true,
+        stateVector: true,
+        openLoops: true,
         createdAt: true,
         updatedAt: true,
+        characterProfiles: {
+          orderBy: { importance: "desc" },
+          select: {
+            id: true,
+            name: true,
+            aliases: true,
+            role: true,
+            appearance: true,
+            personality: true,
+            relationshipState: true,
+            visualLock: true,
+            referenceImageUrl: true,
+            importance: true,
+            locked: true,
+            updatedAt: true,
+          },
+        },
+        storyLoops: {
+          orderBy: [{ status: "asc" }, { importance: "desc" }],
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            status: true,
+            importance: true,
+            evidence: true,
+            updatedAt: true,
+          },
+        },
+        memoryItems: {
+          where: { isEnabled: true },
+          orderBy: { createdAt: "desc" },
+          take: 80,
+          select: {
+            id: true,
+            type: true,
+            title: true,
+            content: true,
+            keywords: true,
+            importance: true,
+            recency: true,
+            source: true,
+            createdAt: true,
+          },
+        },
         versions: {
           orderBy: { versionNumber: "desc" },
           select: {
@@ -314,6 +935,9 @@ export class ProjectsService {
             characterState: true,
             memoryJson: true,
             contextSnapshot: true,
+            stateVector: true,
+            openLoops: true,
+            qualityCheck: true,
             createdAt: true,
             shots: {
               orderBy: { shotNumber: "asc" },
@@ -350,6 +974,42 @@ export class ProjectsService {
       status: project.status,
       storyBible: project.storyBible,
       contextSummary: project.contextSummary,
+      stateVector: project.stateVector,
+      openLoops: project.openLoops,
+      characterProfiles: project.characterProfiles.map((character) => ({
+        id: character.id,
+        name: character.name,
+        aliases: character.aliases,
+        role: character.role,
+        appearance: character.appearance,
+        personality: character.personality,
+        relationshipState: character.relationshipState,
+        visualLock: character.visualLock,
+        referenceImageUrl: character.referenceImageUrl,
+        importance: character.importance,
+        locked: character.locked,
+        updatedAt: character.updatedAt.toISOString(),
+      })),
+      storyLoops: project.storyLoops.map((loop) => ({
+        id: loop.id,
+        title: loop.title,
+        description: loop.description,
+        status: loop.status,
+        importance: loop.importance,
+        evidence: loop.evidence,
+        updatedAt: loop.updatedAt.toISOString(),
+      })),
+      memoryItems: project.memoryItems.map((memory) => ({
+        id: memory.id,
+        type: memory.type,
+        title: memory.title,
+        content: memory.content,
+        keywords: memory.keywords,
+        importance: memory.importance,
+        recency: memory.recency,
+        source: memory.source,
+        createdAt: memory.createdAt.toISOString(),
+      })),
       createdAt: project.createdAt.toISOString(),
       updatedAt: project.updatedAt.toISOString(),
       versions: project.versions.map((version) => ({
@@ -370,6 +1030,9 @@ export class ProjectsService {
         characterState: version.characterState,
         memoryJson: version.memoryJson,
         contextSnapshot: version.contextSnapshot,
+        stateVector: version.stateVector,
+        openLoops: version.openLoops,
+        qualityCheck: version.qualityCheck,
         createdAt: version.createdAt.toISOString(),
         shots: version.shots.map(mapShotDetail),
       })),
@@ -429,6 +1092,36 @@ export class ProjectsService {
         title: true,
         storyBible: true,
         contextSummary: true,
+        stateVector: true,
+        openLoops: true,
+        characterProfiles: {
+          orderBy: { importance: "desc" },
+          take: 12,
+          select: {
+            id: true,
+            name: true,
+            aliases: true,
+            role: true,
+            appearance: true,
+            personality: true,
+            relationshipState: true,
+            visualLock: true,
+            importance: true,
+            locked: true,
+          },
+        },
+        storyLoops: {
+          where: { status: StoryLoopStatus.OPEN },
+          orderBy: { importance: "desc" },
+          take: 12,
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            status: true,
+            importance: true,
+          },
+        },
         user: {
           select: {
             promptPreferences: true,
@@ -445,6 +1138,8 @@ export class ProjectsService {
             endingState: true,
             characterState: true,
             memoryJson: true,
+            stateVector: true,
+            openLoops: true,
             createdAt: true,
           },
         },
@@ -452,6 +1147,24 @@ export class ProjectsService {
     });
 
     if (!project) throw new BadRequestException("Project not found");
+
+    const memoryItems = await this.prisma.memoryItem.findMany({
+      where: { projectId: project.id, userId, isEnabled: true },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+      select: {
+        id: true,
+        type: true,
+        title: true,
+        content: true,
+        keywords: true,
+        importance: true,
+        recency: true,
+        metadata: true,
+        embedding: true,
+        createdAt: true,
+      },
+    });
 
     const recentEpisodes = project.versions.slice(0, 3).map((version) => ({
       id: version.id,
@@ -481,18 +1194,40 @@ export class ProjectsService {
         relevanceScore: score,
         createdAt: version.createdAt.toISOString(),
       }));
+    const relatedMemories = memoryItems
+      .map((memory, index) => ({
+        id: memory.id,
+        type: memory.type,
+        title: memory.title,
+        content: memory.content,
+        keywords: memory.keywords,
+        importance: memory.importance,
+        recency: memory.recency,
+        relevanceScore: scoreMemoryItem(memory, currentScript, index),
+        createdAt: memory.createdAt.toISOString(),
+      }))
+      .filter((memory) => memory.relevanceScore > 0)
+      .sort((a, b) => b.relevanceScore - a.relevanceScore)
+      .slice(0, MEMORY_RETRIEVAL_LIMIT);
 
     const userPreferences = {
       ...DEFAULT_PROMPT_PREFERENCES,
       ...pickRecord(project.user.promptPreferences),
     };
     const storyBible = pickRecord(project.storyBible);
-    const contextText = buildDirectorContextText({
+    const stateVector = pickRecord(project.stateVector);
+    const openLoops = asStringArray(project.openLoops, 20);
+    const contextText = buildDirectorContextTextV2({
       userPreferences,
       storyBible,
       contextSummary: project.contextSummary,
+      stateVector,
+      openLoops,
+      characterProfiles: project.characterProfiles,
+      storyLoops: project.storyLoops,
       recentEpisodes,
       relatedEpisodes,
+      relatedMemories,
     });
 
     return {
@@ -501,8 +1236,13 @@ export class ProjectsService {
       userPreferences,
       storyBible,
       contextSummary: project.contextSummary,
+      stateVector,
+      openLoops,
+      characterProfiles: project.characterProfiles,
+      storyLoops: project.storyLoops,
       recentEpisodes,
       relatedEpisodes,
+      relatedMemories,
       contextText,
     };
   }
@@ -510,6 +1250,8 @@ export class ProjectsService {
   async createProject(userId: string, input: CreateProjectDto) {
     if (!userId) throw new BadRequestException("Authenticated user id is required");
     const episodeMemory = deriveEpisodeMemory(input);
+    const narrativeMemory = deriveNarrativeMemory(input, episodeMemory);
+    const qualityCheck = deriveQualityCheck(input, narrativeMemory);
 
     const result = await this.prisma.$transaction(async (prisma) => {
       const project = input.projectId
@@ -524,7 +1266,7 @@ export class ProjectsService {
               duration: input.duration,
               status: input.status || "draft",
             },
-            select: { id: true, storyBible: true },
+            select: { id: true, storyBible: true, stateVector: true, openLoops: true },
           })
         : await prisma.project.create({
             data: {
@@ -537,12 +1279,22 @@ export class ProjectsService {
               duration: input.duration,
               status: input.status || "draft",
             },
-            select: { id: true, storyBible: true },
+            select: { id: true, storyBible: true, stateVector: true, openLoops: true },
           });
       const storyBible = mergeStoryBible(project.storyBible, input, episodeMemory);
+      const characterProfiles = deriveCharacterProfiles(input, narrativeMemory);
+      const storyLoops = deriveStoryLoops(input, narrativeMemory);
+      storyBible.characters = appendUnique(storyBible.characters, characterProfiles.map((character) => character.name), 50);
+      storyBible.openLoops = narrativeMemory.openLoops;
       const contextSummary = cleanText(input.contextSummary, 500) || buildContextSummary(storyBible, episodeMemory);
+      const stateVector = pickRecord(narrativeMemory.stateVector);
+      const openLoops = asStringArray(narrativeMemory.openLoops, 20);
       const contextSnapshot = {
         storyBible,
+        narrativeMemory,
+        stateVector,
+        openLoops,
+        qualityCheck,
         priorContext: input.contextSnapshot || null,
       };
 
@@ -573,6 +1325,9 @@ export class ProjectsService {
             characterState: episodeMemory.characterState,
             memoryJson: toJson(episodeMemory.memoryJson),
             contextSnapshot: toJson(contextSnapshot),
+            stateVector: toJson(stateVector),
+            openLoops: toJson(openLoops),
+            qualityCheck: toJson(qualityCheck),
             shots: {
               create: input.shots.map((shot) => ({
                 projectId: project.id,
@@ -593,11 +1348,21 @@ export class ProjectsService {
           select: { id: true },
         });
 
+        await prisma.memoryItem.deleteMany({ where: { versionId: version.id } });
+        const memoryItems = deriveMemoryItems(input, episodeMemory, project.id, userId, version.id);
+        if (memoryItems.length) {
+          await prisma.memoryItem.createMany({ data: memoryItems });
+        }
+        await upsertCharacterProfiles(prisma, { userId, projectId: project.id, versionId: version.id, characters: characterProfiles });
+        await upsertStoryLoops(prisma, { userId, projectId: project.id, versionId: version.id, loops: storyLoops });
+
         await prisma.project.update({
           where: { id: project.id },
           data: {
             storyBible: toJson(storyBible),
             contextSummary,
+            stateVector: toJson(stateVector),
+            openLoops: toJson(openLoops),
           },
         });
 
@@ -630,6 +1395,9 @@ export class ProjectsService {
           characterState: episodeMemory.characterState,
           memoryJson: toJson(episodeMemory.memoryJson),
           contextSnapshot: toJson(contextSnapshot),
+          stateVector: toJson(stateVector),
+          openLoops: toJson(openLoops),
+          qualityCheck: toJson(qualityCheck),
           shots: {
             create: input.shots.map((shot) => ({
               projectId: project.id,
@@ -650,11 +1418,21 @@ export class ProjectsService {
         select: { id: true },
       });
 
+      await prisma.memoryItem.deleteMany({ where: { versionId: version.id } });
+      const memoryItems = deriveMemoryItems(input, episodeMemory, project.id, userId, version.id);
+      if (memoryItems.length) {
+        await prisma.memoryItem.createMany({ data: memoryItems });
+      }
+      await upsertCharacterProfiles(prisma, { userId, projectId: project.id, versionId: version.id, characters: characterProfiles });
+      await upsertStoryLoops(prisma, { userId, projectId: project.id, versionId: version.id, loops: storyLoops });
+
       await prisma.project.update({
         where: { id: project.id },
         data: {
           storyBible: toJson(storyBible),
           contextSummary,
+          stateVector: toJson(stateVector),
+          openLoops: toJson(openLoops),
         },
       });
 
@@ -662,6 +1440,92 @@ export class ProjectsService {
     });
 
     return { saved: true, projectId: result.project.id, versionId: result.version.id, versionNumber: result.versionNumber };
+  }
+
+  async updateProjectMemory(userId: string, projectId: string, input: UpdateProjectMemoryDto) {
+    if (!userId) throw new BadRequestException("Authenticated user id is required");
+
+    const project = await this.prisma.project.update({
+      where: { id: projectId, userId },
+      data: {
+        storyBible: input.storyBible === undefined ? undefined : toJson(input.storyBible),
+        contextSummary: input.contextSummary,
+        stateVector: input.stateVector === undefined ? undefined : toJson(input.stateVector),
+        openLoops: input.openLoops === undefined ? undefined : toJson(input.openLoops),
+      },
+      select: {
+        id: true,
+        storyBible: true,
+        contextSummary: true,
+        stateVector: true,
+        openLoops: true,
+      },
+    });
+
+    return { saved: true, project };
+  }
+
+  async updateCharacterProfile(userId: string, projectId: string, characterId: string, input: UpdateCharacterProfileDto) {
+    if (!userId) throw new BadRequestException("Authenticated user id is required");
+
+    const character = await this.prisma.characterProfile.update({
+      where: {
+        id: characterId,
+        projectId,
+        userId,
+      },
+      data: {
+        role: input.role,
+        appearance: input.appearance,
+        personality: input.personality,
+        relationshipState: input.relationshipState,
+        visualLock: input.visualLock,
+        locked: input.locked,
+      },
+    });
+
+    return { saved: true, character };
+  }
+
+  async updateStoryLoop(userId: string, projectId: string, loopId: string, input: UpdateStoryLoopDto) {
+    if (!userId) throw new BadRequestException("Authenticated user id is required");
+    const status = input.status && input.status in StoryLoopStatus
+      ? StoryLoopStatus[input.status as keyof typeof StoryLoopStatus]
+      : undefined;
+
+    const loop = await this.prisma.storyLoop.update({
+      where: {
+        id: loopId,
+        projectId,
+        userId,
+      },
+      data: {
+        description: input.description,
+        status,
+      },
+    });
+
+    return { saved: true, loop };
+  }
+
+  async updateMemoryItem(userId: string, projectId: string, memoryId: string, input: UpdateMemoryItemDto) {
+    if (!userId) throw new BadRequestException("Authenticated user id is required");
+
+    const content = input.content === undefined ? undefined : cleanText(input.content, 1200);
+    const memory = await this.prisma.memoryItem.update({
+      where: {
+        id: memoryId,
+        projectId,
+        userId,
+      },
+      data: {
+        content,
+        isEnabled: input.isEnabled,
+        embedding: content ? toJson(buildLocalEmbedding(content)) : undefined,
+      },
+    });
+
+    return { saved: true, memory };
   }
 
   async saveStoryboardImage(userId: string, projectId: string, versionId: string, input: SaveStoryboardImageDto) {

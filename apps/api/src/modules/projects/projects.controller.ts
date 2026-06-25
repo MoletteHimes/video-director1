@@ -1,7 +1,15 @@
-import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
 import { ok } from "../../common/api-response";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { BuildProjectContextDto, CreateProjectDto, SaveStoryboardImageDto } from "./projects.dto";
+import {
+  BuildProjectContextDto,
+  CreateProjectDto,
+  SaveStoryboardImageDto,
+  UpdateCharacterProfileDto,
+  UpdateMemoryItemDto,
+  UpdateProjectMemoryDto,
+  UpdateStoryLoopDto,
+} from "./projects.dto";
 import { ProjectsService } from "./projects.service";
 
 @Controller("projects")
@@ -50,6 +58,49 @@ export class ProjectsController {
   @Post()
   async createProject(@Req() request: { user: { id: string } }, @Body() body: CreateProjectDto) {
     const result = await this.projectsService.createProject(request.user.id, body);
+    return ok(result);
+  }
+
+  @Patch(":projectId/memory")
+  async updateProjectMemory(
+    @Req() request: { user: { id: string } },
+    @Param("projectId") projectId: string,
+    @Body() body: UpdateProjectMemoryDto,
+  ) {
+    const result = await this.projectsService.updateProjectMemory(request.user.id, projectId, body);
+    return ok(result);
+  }
+
+  @Patch(":projectId/characters/:characterId")
+  async updateCharacterProfile(
+    @Req() request: { user: { id: string } },
+    @Param("projectId") projectId: string,
+    @Param("characterId") characterId: string,
+    @Body() body: UpdateCharacterProfileDto,
+  ) {
+    const result = await this.projectsService.updateCharacterProfile(request.user.id, projectId, characterId, body);
+    return ok(result);
+  }
+
+  @Patch(":projectId/story-loops/:loopId")
+  async updateStoryLoop(
+    @Req() request: { user: { id: string } },
+    @Param("projectId") projectId: string,
+    @Param("loopId") loopId: string,
+    @Body() body: UpdateStoryLoopDto,
+  ) {
+    const result = await this.projectsService.updateStoryLoop(request.user.id, projectId, loopId, body);
+    return ok(result);
+  }
+
+  @Patch(":projectId/memories/:memoryId")
+  async updateMemoryItem(
+    @Req() request: { user: { id: string } },
+    @Param("projectId") projectId: string,
+    @Param("memoryId") memoryId: string,
+    @Body() body: UpdateMemoryItemDto,
+  ) {
+    const result = await this.projectsService.updateMemoryItem(request.user.id, projectId, memoryId, body);
     return ok(result);
   }
 
