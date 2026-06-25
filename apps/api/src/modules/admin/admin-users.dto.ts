@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsOptional, IsString, Min } from "class-validator";
+import { IsEmail, IsEnum, IsInt, IsOptional, IsString, Min, MinLength } from "class-validator";
 import { UserPlan, UserRole, UserStatus } from "@prisma/client";
 
 export class ListUsersQueryDto {
@@ -21,6 +21,20 @@ export class ListUsersQueryDto {
   @IsOptional()
   @IsString()
   pageSize?: string;
+}
+
+export class CreateUserDto {
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsString()
+  @MinLength(8)
+  password!: string;
 }
 
 export class UpdateUserDto {

@@ -19,7 +19,8 @@ test("frontend login uses the NestJS auth proxy instead of Supabase magic links"
   assert.match(loginPage, /purpose: mode === "register" \? "register" : "reset_password"/);
   assert.doesNotMatch(loginPage, /useEffect/);
   assert.doesNotMatch(loginPage, /加载验证码/);
-  assert.match(loginPage, /router\.push\("\/dashboard"\)/);
+  assert.match(loginPage, /searchParams\.get\("next"\)/);
+  assert.match(loginPage, /router\.push\(safeNextPath\)/);
   assert.doesNotMatch(loginPage, /邮箱密码登录/);
   assert.doesNotMatch(loginPage, /NestJS 账号系统/);
   assert.doesNotMatch(loginPage, /HttpOnly/);

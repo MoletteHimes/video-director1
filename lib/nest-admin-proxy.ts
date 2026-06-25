@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAdminRequestAuthorized } from "@/lib/admin-auth";
 import { NEST_AUTH_TOKEN_COOKIE } from "@/lib/nest-auth-proxy";
 
 type NestResponse = Record<string, unknown> & {
@@ -16,6 +17,15 @@ function getBearerToken(request: NextRequest) {
   return request.cookies.get(NEST_AUTH_TOKEN_COOKIE)?.value;
 }
 
+function getInternalAdminToken() {
+  return (
+    process.env.ADMIN_INTERNAL_TOKEN ||
+    process.env.ADMIN_SESSION_SECRET ||
+    process.env.ADMIN_LIBRARY_TOKEN ||
+    ""
+  ).trim();
+}
+
 function formatUpstreamError(payload: NestResponse | null, fallback: string) {
   const message = payload ? payload.error || payload.message || fallback : fallback;
   return Array.isArray(message) ? message.join("; ") : message;
@@ -31,16 +41,37 @@ async function readJson(response: Response): Promise<NestResponse | null> {
 
 async function forward(request: NextRequest, path: string, init: { method: string; body?: unknown }) {
   const token = getBearerToken(request);
-  if (!token) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const localAdminAuthorized = isAdminRequestAuthorized(request);
+  if (!token && !localAdminAuthorized) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  const headers: Record<string, string> = {};
+  if (localAdminAuthorized) {
+    const internalAdminToken = getInternalAdminToken();
+    if (!internalAdminToken) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "ADMIN_SESSION_SECRET is required for local admin proxy access.",
+        },
+        { status: 500 },
+      );
+    }
+    headers["x-internal-admin-token"] = internalAdminToken;
+  } else if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  if (init.body !== undefined) {
+    headers["content-type"] = "application/json";
+  }
 
   let upstream: Response;
   try {
     upstream = await fetch(`${getNestApiBaseUrl()}/admin/${path}`, {
       method: init.method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(init.body !== undefined ? { "content-type": "application/json" } : {}),
-      },
+      headers,
       body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
       cache: "no-store",
     });
@@ -66,6 +97,11 @@ export function proxyAdminUsersList(request: NextRequest) {
   return forward(request, `users${search}`, { method: "GET" });
 }
 
+export async function proxyAdminUserCreate(request: NextRequest) {
+  const body = await request.json().catch(() => ({}));
+  return forward(request, "users", { method: "POST", body });
+}
+
 export function proxyAdminUserGet(request: NextRequest, id: string) {
   return forward(request, `users/${encodeURIComponent(id)}`, { method: "GET" });
 }
@@ -77,4 +113,31 @@ export async function proxyAdminUserPatch(request: NextRequest, id: string) {
 
 export function proxyAdminUserDelete(request: NextRequest, id: string) {
   return forward(request, `users/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function proxyAdminProjectsList(request: NextRequest) {
+  const search = request.nextUrl.search || "";
+  return forward(request, `projects${search}`, { method: "GET" });
+}
+
+export function proxyAdminProjectGet(request: NextRequest, id: string) {
+  return forward(request, `projects/${encodeURIComponent(id)}`, { method: "GET" });
+}
+
+export function proxyAdminProjectDelete(request: NextRequest, id: string) {
+  return forward(request, `projects/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function proxyAdminUsageSummary(request: NextRequest) {
+  return forward(request, "usage/summary", { method: "GET" });
+}
+
+export function proxyAdminUsageEvents(request: NextRequest) {
+  const search = request.nextUrl.search || "";
+  return forward(request, `usage/events${search}`, { method: "GET" });
+}
+
+export function proxyAdminLogsList(request: NextRequest) {
+  const search = request.nextUrl.search || "";
+  return forward(request, `logs${search}`, { method: "GET" });
 }

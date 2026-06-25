@@ -143,7 +143,9 @@ export default function LoginPage() {
       if (!res.ok || !data?.ok) {
         throw new Error(data?.error || "账号服务暂时不可用，请稍后再试。");
       }
-      router.push("/dashboard");
+      const nextPath = searchParams.get("next");
+      const safeNextPath = nextPath?.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/dashboard";
+      router.push(safeNextPath);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "账号服务暂时不可用，请稍后再试。");
     } finally {

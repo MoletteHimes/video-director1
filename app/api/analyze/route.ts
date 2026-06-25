@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { analyzeScript } from "@/lib/ai";
 import { fetchDirectorContextFromNest, saveAnalysisProjectToNest } from "@/lib/nest-projects-proxy";
+import { consumeAnalyzeUsageFromNest, recordAnalyzeJobToNest } from "@/lib/nest-usage-proxy";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { createRequestId, durationSince, logger } from "@/lib/logger";
 
@@ -22,6 +23,7 @@ export async function POST(request: NextRequest) {
   const requestId = createRequestId("analyze");
   const startedAt = Date.now();
   const route = "/api/analyze";
+  let body: z.infer<typeof RequestSchema> | null = null;
   try {
     logger.info("api_request_started", { requestId, route, method: "POST" });
     const rateLimit = checkRateLimit({
@@ -34,11 +36,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "请求太频繁，请稍后再试" }, { status: 429 });
     }
 
-    const body = RequestSchema.parse(await request.json());
+    body = RequestSchema.parse(await request.json());
+    const provider = body.provider || process.env.AI_PROVIDER || "mock";
+    const model = process.env.AI_MODEL || process.env.DEEPSEEK_MODEL || "";
+    const usageMeta = await consumeAnalyzeUsageFromNest(request, {
+      provider,
+      model,
+      inputChars: body.script.length,
+    });
+    if (!usageMeta.ok) {
+      logger.warn("analyze_usage_rejected", {
+        requestId,
+        route,
+        provider,
+        model,
+        error: usageMeta.error,
+      });
+      return NextResponse.json(
+        { ok: false, error: usageMeta.error || "Usage quota check failed" },
+        { status: usageMeta.status || 403 },
+      );
+    }
+
     logger.info("analyze_generation_started", {
       requestId,
       route,
-      provider: body.provider || process.env.AI_PROVIDER || "mock",
+      provider,
       workflow: process.env.AI_WORKFLOW || "langgraph",
       scriptLength: body.script.length,
       saveRequested: body.save,
@@ -60,6 +83,28 @@ export async function POST(request: NextRequest) {
       storyboardCount: result.storyboard.length,
       saved: Boolean(saveMeta.saved),
     });
+    await recordAnalyzeJobToNest(request, {
+      status: "COMPLETED",
+      projectId: typeof saveMeta?.projectId === "string" ? saveMeta.projectId : body.projectId,
+      input: {
+        requestId,
+        provider,
+        model,
+        scriptLength: body.script.length,
+        contentType: body.contentType,
+        style: body.style,
+        duration: body.duration,
+        saveRequested: body.save,
+        usageMeta,
+      },
+      output: {
+        title: result.title,
+        storyboardCount: result.storyboard.length,
+        durationMs: durationSince(startedAt),
+        saved: Boolean(saveMeta.saved),
+        versionId: typeof saveMeta?.versionId === "string" ? saveMeta.versionId : undefined,
+      },
+    });
     return NextResponse.json({ ok: true, result, save: saveMeta });
   } catch (error: any) {
     logger.error("api_request_failed", {
@@ -68,6 +113,23 @@ export async function POST(request: NextRequest) {
       durationMs: durationSince(startedAt),
       error,
     });
+    if (body) {
+      await recordAnalyzeJobToNest(request, {
+        status: "FAILED",
+        projectId: body.projectId,
+        input: {
+          requestId,
+          provider: body.provider || process.env.AI_PROVIDER || "mock",
+          model: process.env.AI_MODEL || process.env.DEEPSEEK_MODEL || "",
+          scriptLength: body.script.length,
+          contentType: body.contentType,
+          style: body.style,
+          duration: body.duration,
+          saveRequested: body.save,
+        },
+        error: error?.message || "Failed to analyze script",
+      });
+    }
     return NextResponse.json(
       { ok: false, error: error?.message || "Failed to analyze script" },
       { status: 400 }

@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  ADMIN_SESSION_COOKIE,
-  createAdminSessionCookie,
-} from "@/lib/admin-auth";
+import { ADMIN_SESSION_COOKIE, createAdminSessionCookie } from "@/lib/admin-auth";
 
 export const runtime = "nodejs";
 

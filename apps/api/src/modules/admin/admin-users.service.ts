@@ -6,7 +6,8 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
-import { ListUsersQueryDto, UpdateUserDto } from "./admin-users.dto";
+import { hashPassword } from "../auth/password";
+import { CreateUserDto, ListUsersQueryDto, UpdateUserDto } from "./admin-users.dto";
 
 const adminUserSelect = {
   id: true,
@@ -61,6 +62,41 @@ function pickUpdatableFields(input: UpdateUserDto) {
 @Injectable()
 export class AdminUsersService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async createUser(input: CreateUserDto) {
+    const normalizedEmail = input.email?.trim().toLowerCase() || null;
+    const normalizedPhone = input.phone?.replace(/\s+/g, "").trim() || null;
+
+    if (!normalizedEmail && !normalizedPhone) {
+      throw new BadRequestException("Email or phone is required");
+    }
+
+    const existing = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          ...(normalizedEmail ? [{ email: normalizedEmail }] : []),
+          ...(normalizedPhone ? [{ phone: normalizedPhone }] : []),
+        ],
+      },
+      select: { id: true },
+    });
+    if (existing) throw new BadRequestException("User email or phone already exists");
+
+    const user = await this.prisma.user.create({
+      data: {
+        email: normalizedEmail,
+        phone: normalizedPhone,
+        passwordHash: await hashPassword(input.password),
+        role: "USER",
+        plan: "FREE",
+        status: "ACTIVE",
+        credits: 0,
+        dailyLimit: 3,
+      },
+      select: { ...adminUserSelect, _count: { select: { projects: true } } },
+    });
+    return mapAdminUser(user);
+  }
 
   async listUsers(query: ListUsersQueryDto) {
     const page = Math.max(1, Number(query.page) || 1);

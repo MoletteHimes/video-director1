@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Power, Save, Search, Trash2, X } from "lucide-react";
+import { Loader2, Power, Save, Search, Trash2, UserPlus, X } from "lucide-react";
 import { AdminShell } from "@/components/AdminShell";
 
 type Role = "USER" | "ADMIN";
@@ -44,6 +44,115 @@ function formatDate(value: string | null) {
 
 function displayName(user: AdminUserRow) {
   return user.email || user.phone || user.id.slice(0, 8);
+}
+
+function CreateUserModal({
+  onClose,
+  onSaved,
+}: {
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function onSubmit() {
+    setMessage("");
+    if (!email.trim() && !phone.trim()) {
+      setMessage("邮箱和手机号至少填写一个");
+      return;
+    }
+    if (password.length < 8) {
+      setMessage("密码至少 8 位");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim() || undefined,
+          phone: phone.trim() || undefined,
+          password,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "新增用户失败");
+      onSaved();
+      onClose();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "新增用户失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/72 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="w-full max-w-lg rounded-2xl border border-cyan-300/20 bg-slate-950 p-5 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase text-cyan-200/70">Create User</p>
+            <h3 className="mt-1 text-xl font-black text-white">新增用户</h3>
+            <p className="mt-1 text-xs text-slate-400">默认创建为 USER / FREE / 正常，密码会在后端自动加密。</p>
+          </div>
+          <button onClick={onClose} className="rounded-xl border border-white/10 p-2 text-slate-300 hover:bg-white/10">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-4 text-sm">
+          <label className="space-y-1.5">
+            <span className="font-semibold text-white">手机号</span>
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="例如：13800138001"
+              className="control-input w-full rounded-xl px-3 py-2.5"
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="font-semibold text-white">邮箱</span>
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="例如：user@example.com"
+              className="control-input w-full rounded-xl px-3 py-2.5"
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="font-semibold text-white">密码</span>
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
+              placeholder="至少 8 位"
+              className="control-input w-full rounded-xl px-3 py-2.5"
+            />
+          </label>
+        </div>
+
+        {message && <p className="mt-4 rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-100">{message}</p>}
+
+        <div className="mt-5 flex justify-end gap-3">
+          <button onClick={onClose} className="muted-button rounded-xl px-5 py-2.5 text-sm font-bold">
+            取消
+          </button>
+          <button onClick={onSubmit} disabled={saving} className="primary-neon inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold disabled:opacity-60">
+            <UserPlus className="h-4 w-4" /> {saving ? "创建中..." : "创建用户"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function EditUserModal({
@@ -130,7 +239,7 @@ function EditUserModal({
             </select>
           </label>
           <label className="space-y-1.5">
-            <span className="font-semibold text-white">积分 credits</span>
+            <span className="font-semibold text-white">积分</span>
             <input type="number" min="0" value={credits} onChange={(e) => setCredits(e.target.value)} className="control-input w-full rounded-xl px-3 py-2.5" />
           </label>
           <label className="space-y-1.5">
@@ -168,6 +277,7 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<AdminUserRow | null>(null);
+  const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState("");
 
   const load = useCallback(async () => {
@@ -199,6 +309,11 @@ export default function AdminUsersPage() {
   }, [load]);
 
   function applyFilters() {
+    if (page !== 1) setPage(1);
+    else void load();
+  }
+
+  function refreshFromFirstPage() {
     if (page !== 1) setPage(1);
     else void load();
   }
@@ -243,8 +358,16 @@ export default function AdminUsersPage() {
   return (
     <AdminShell>
       <div className="mb-2 text-xs uppercase tracking-wide text-cyan-200/70">User Management</div>
-      <h1 className="text-3xl font-black text-white">用户管理</h1>
-      <p className="mt-2 text-sm text-slate-400">共 {meta.total} 位用户。可搜索、改套餐 / 额度、停用 / 启用、删除。</p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-black text-white">用户管理</h1>
+          <p className="mt-2 text-sm text-slate-400">共 {meta.total} 位用户。可搜索、手动新增、改套餐 / 额度、停用 / 启用、删除。</p>
+        </div>
+        <button onClick={() => setCreating(true)} className="primary-neon inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold">
+          <UserPlus className="h-4 w-4" />
+          新增用户
+        </button>
+      </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <div className="relative">
@@ -299,7 +422,9 @@ export default function AdminUsersPage() {
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={10} className="p-8 text-center text-slate-500">没有匹配的用户</td>
+                <td colSpan={10} className="p-8 text-center text-slate-500">
+                  没有匹配的用户
+                </td>
               </tr>
             ) : (
               rows.map((user) => (
@@ -353,6 +478,7 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
+      {creating && <CreateUserModal onClose={() => setCreating(false)} onSaved={refreshFromFirstPage} />}
       {editing && <EditUserModal user={editing} onClose={() => setEditing(null)} onSaved={load} />}
     </AdminShell>
   );

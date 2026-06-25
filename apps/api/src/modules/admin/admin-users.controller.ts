@@ -5,13 +5,14 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Query,
   Req,
   UseGuards,
 } from "@nestjs/common";
 import { ok } from "../../common/api-response";
 import { AdminGuard } from "../auth/admin.guard";
-import { ListUsersQueryDto, UpdateUserDto } from "./admin-users.dto";
+import { CreateUserDto, ListUsersQueryDto, UpdateUserDto } from "./admin-users.dto";
 import { AdminUsersService } from "./admin-users.service";
 
 @Controller("admin/users")
@@ -22,6 +23,11 @@ export class AdminUsersController {
   @Get()
   async list(@Query() query: ListUsersQueryDto) {
     return ok(await this.adminUsers.listUsers(query));
+  }
+
+  @Post()
+  async create(@Body() body: CreateUserDto) {
+    return ok({ user: await this.adminUsers.createUser(body) });
   }
 
   @Get(":id")

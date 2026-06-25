@@ -9,6 +9,8 @@ test("AdminGuard enforces JWT verification plus role ADMIN", () => {
 
   const guard = readFileSync(guardPath, "utf8");
   assert.match(guard, /extends JwtAuthGuard/);
+  assert.match(guard, /x-internal-admin-token/);
+  assert.match(guard, /ADMIN_SESSION_SECRET/);
   assert.match(guard, /super\.canActivate/);
   assert.match(guard, /role !== "ADMIN"/);
   assert.match(guard, /ForbiddenException/);
@@ -49,7 +51,7 @@ test("admin home page gates access on role ADMIN", () => {
   assert.match(page, /AdminShell/);
 
   const shell = readFileSync("components/AdminShell.tsx", "utf8");
-  assert.match(shell, /\/api\/auth\/me/);
-  assert.match(shell, /role === "ADMIN"/);
-  assert.match(shell, /\/login\?next=\/admin/);
+  assert.match(shell, /\/api\/admin\/session/);
+  assert.match(shell, /\/api\/admin\/login/);
+  assert.doesNotMatch(shell, /\/login\?next=/);
 });
