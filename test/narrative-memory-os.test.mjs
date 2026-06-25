@@ -34,12 +34,33 @@ test("project service writes and retrieves L1-L5 director memory", () => {
   assert.match(service, /function deriveCharacterProfiles/);
   assert.match(service, /function deriveStoryLoops/);
   assert.match(service, /function buildLocalEmbedding/);
+  assert.match(service, /function formatPgVector/);
+  assert.match(service, /async function syncMemoryEmbeddingVectors/);
+  assert.match(service, /async findVectorRelatedMemories/);
+  assert.match(service, /scoreMemoryItem\(memory, currentScript/);
   assert.match(service, /function deriveQualityCheck/);
   assert.match(service, /upsertCharacterProfiles/);
   assert.match(service, /upsertStoryLoops/);
   assert.match(service, /characterProfiles/);
   assert.match(service, /storyLoops/);
   assert.match(service, /qualityCheck: toJson\(qualityCheck\)/);
+  assert.match(service, /await syncMemoryEmbeddingVectors\(prisma, version\.id\)/);
+  assert.match(service, /const vectorRelatedMemories = await this\.findVectorRelatedMemories/);
+});
+
+test("AI result can carry hidden structured memory without changing full video prompt storage", () => {
+  const ai = readFileSync("lib/ai.ts", "utf8");
+  const types = readFileSync("types/index.ts", "utf8");
+  const proxy = readFileSync("lib/nest-projects-proxy.ts", "utf8");
+
+  assert.match(types, /narrativeMemory\?: NarrativeMemoryResult/);
+  assert.match(types, /qualityCheck\?: Record<string, unknown>/);
+  assert.match(ai, /NarrativeMemorySchema/);
+  assert.match(ai, /qualityCheck: z\.record\(z\.string\(\), z\.unknown\(\)\)\.optional\(\)/);
+  assert.match(ai, /Do not mix narrativeMemory or qualityCheck into workflow\.shotPromptText or workflow\.fullVideoPrompt/);
+  assert.match(proxy, /result\.narrativeMemory/);
+  assert.match(proxy, /result\.qualityCheck/);
+  assert.match(proxy, /fullVideoPrompt: payload\.fullVideoPrompt/);
 });
 
 test("project page exposes memory management surfaces", () => {
@@ -51,4 +72,6 @@ test("project page exposes memory management surfaces", () => {
   assert.match(projects, /memoryItems/);
   assert.match(projects, /qualityCheck/);
   assert.match(projects, /Director Memory/);
+  assert.match(projects, /Retrieval Debug/);
+  assert.match(projects, /toggleMemory/);
 });

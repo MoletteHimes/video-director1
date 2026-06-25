@@ -291,10 +291,10 @@ function deriveProjectMemoryFromAnalysis(originalScript: string | undefined, res
     endingState,
     characterState,
     memoryJson,
-    narrativeMemory,
+    narrativeMemory: result.narrativeMemory || narrativeMemory,
     stateVector,
     openLoops,
-    qualityCheck,
+    qualityCheck: result.qualityCheck || qualityCheck,
     contextSummary: [storyBible.genre, storyBible.visualStyle, endingState].filter(Boolean).join(" · "),
   };
 }

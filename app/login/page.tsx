@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { KeyRound, LockKeyhole, Mail, Phone, RefreshCcw, ShieldCheck, UserPlus, Video, X } from "lucide-react";
 
@@ -17,7 +17,7 @@ type CodeDialogState = {
   captchaAnswer: string;
 };
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialMode = searchParams.get("mode") === "register" ? "register" : searchParams.get("mode") === "reset" ? "reset" : "login";
@@ -355,5 +355,21 @@ export default function LoginPage() {
         )}
       </form>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center p-6">
+          <div className="glass-panel neon-border w-full max-w-md rounded-2xl p-8 text-sm text-slate-300">
+            加载账号中心...
+          </div>
+        </main>
+      }
+    >
+      <LoginPageContent />
+    </Suspense>
   );
 }

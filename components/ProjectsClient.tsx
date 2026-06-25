@@ -81,8 +81,12 @@ type MemoryItem = {
   type: string;
   title?: string | null;
   content: string;
+  keywords?: unknown[] | null;
   importance: number;
   recency: number;
+  isEnabled?: boolean;
+  source?: string | null;
+  createdAt?: string;
 };
 
 type ProjectDetail = {
@@ -421,10 +425,10 @@ export function ProjectsClient() {
     }
   }
 
-  async function disableMemory(memory: MemoryItem) {
+  async function toggleMemory(memory: MemoryItem) {
     if (!project) return;
     try {
-      await patchProjectSubPath(`memories/${memory.id}`, { isEnabled: false });
+      await patchProjectSubPath(`memories/${memory.id}`, { isEnabled: !memory.isEnabled });
     } catch (err) {
       setProjectDetailError(err instanceof Error ? err.message : "记忆更新失败");
     }
@@ -771,25 +775,48 @@ export function ProjectsClient() {
                   </div>
 
                   <div className="rounded-xl border border-white/10 bg-slate-950/55 p-3">
-                    <div className="mb-3 text-sm font-bold text-white">memoryItems / 检索记忆库</div>
+                    <div className="mb-1 text-sm font-bold text-white">Retrieval Debug / 检索记忆库</div>
+                    <p className="mb-3 text-xs leading-5 text-slate-500">
+                      score = importance * 0.5 + relevance * 0.4 + recency * 0.1
+                    </p>
                     <div className="max-h-96 space-y-2 overflow-auto pr-1">
                       {(project.memoryItems || []).map((memory) => (
-                        <div key={memory.id} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                        <div
+                          key={memory.id}
+                          className={`rounded-lg border p-3 ${
+                            memory.isEnabled === false
+                              ? "border-white/5 bg-white/[0.015] opacity-55"
+                              : "border-white/10 bg-white/[0.03]"
+                          }`}
+                        >
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <div className="font-semibold text-white">{memory.title || memory.type}</div>
                               <div className="mt-1 text-xs text-slate-500">
-                                {memory.type} · I {memory.importance.toFixed(2)} · R {memory.recency.toFixed(2)}
+                                {memory.type} · I {memory.importance.toFixed(2)} · R {memory.recency.toFixed(2)} ·{" "}
+                                {memory.isEnabled === false ? "disabled" : "enabled"} · {memory.source || "local"}
                               </div>
                             </div>
                             <button
                               type="button"
-                              onClick={() => disableMemory(memory)}
+                              onClick={() => toggleMemory(memory)}
                               className="rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-200 hover:bg-white/[0.08]"
                             >
-                              停用
+                              {memory.isEnabled === false ? "启用" : "停用"}
                             </button>
                           </div>
+                          {Array.isArray(memory.keywords) && memory.keywords.length ? (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {memory.keywords.slice(0, 8).map((keyword, index) => (
+                                <span
+                                  key={`${String(keyword)}-${index}`}
+                                  className="rounded-full border border-cyan-200/15 px-2 py-0.5 text-[11px] text-cyan-100/70"
+                                >
+                                  {String(keyword)}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
                           <p className="mt-2 text-xs leading-5 text-slate-400">{memory.content}</p>
                         </div>
                       ))}

@@ -57,6 +57,18 @@ const GenerationDiagnosisSchema = z.object({
   avoid: ModelStringArray,
 });
 
+const NarrativeMemorySchema = z.object({
+  episodeSummary: OptionalModelString,
+  endingState: OptionalModelString,
+  characterState: OptionalModelString,
+  stateVector: z.record(z.string(), z.unknown()).optional(),
+  openLoops: ModelStringArray.optional(),
+  resolvedLoops: ModelStringArray.optional(),
+  characters: z.array(z.record(z.string(), z.unknown())).optional(),
+  storyLoops: z.array(z.record(z.string(), z.unknown())).optional(),
+  memoryItems: z.array(z.record(z.string(), z.unknown())).optional(),
+}).optional();
+
 const AnalysisSchema = z.object({
   title: ModelString,
   contentType: ModelString,
@@ -100,6 +112,8 @@ const AnalysisSchema = z.object({
   })),
   recommendedItems: ModelStringArray,
   editingNotes: ModelStringArray,
+  narrativeMemory: NarrativeMemorySchema,
+  qualityCheck: z.record(z.string(), z.unknown()).optional(),
 });
 
 function extractJson(text: string) {
@@ -495,6 +509,8 @@ async function callOpenAICompatible(input: AnalyzeScriptInput & { provider: stri
             knowledgeContext: input.knowledgeContext || "",
             directorContext: input.directorContext || "",
             directorContextInstruction: directorContextInstruction(input),
+            hiddenMemoryInstruction:
+              "You may add only hidden system fields narrativeMemory and qualityCheck for project memory. Do not mix narrativeMemory or qualityCheck into workflow.shotPromptText or workflow.fullVideoPrompt.",
             knowledgeInstruction: input.knowledgeContext
               ? "必须优先参考 knowledgeContext 中的镜头、运镜、转场、风格、公式和避免事项；不要逐字照抄，要结合用户文案自然改写；avoid/必须避免内容要进入负面提示词。"
               : "未提供额外知识库上下文，请按通用导演规则生成。",
@@ -581,6 +597,8 @@ async function callAnthropic(input: AnalyzeScriptInput) {
             knowledgeContext: input.knowledgeContext || "",
             directorContext: input.directorContext || "",
             directorContextInstruction: directorContextInstruction(input),
+            hiddenMemoryInstruction:
+              "You may add only hidden system fields narrativeMemory and qualityCheck for project memory. Do not mix narrativeMemory or qualityCheck into workflow.shotPromptText or workflow.fullVideoPrompt.",
             knowledgeInstruction: input.knowledgeContext
               ? "必须优先参考 knowledgeContext 中的镜头、运镜、转场、风格、公式和避免事项；不要逐字照抄，要结合用户文案自然改写；avoid/必须避免内容要进入负面提示词。"
               : "未提供额外知识库上下文，请按通用导演规则生成。",

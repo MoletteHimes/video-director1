@@ -67,6 +67,18 @@ export type PromptWorkflow = {
   finalPromptPackage?: string;
 };
 
+export type NarrativeMemoryResult = {
+  episodeSummary?: string;
+  endingState?: string;
+  characterState?: string;
+  stateVector?: Record<string, unknown>;
+  openLoops?: string[];
+  resolvedLoops?: string[];
+  characters?: Array<Record<string, unknown>>;
+  storyLoops?: Array<Record<string, unknown>>;
+  memoryItems?: Array<Record<string, unknown>>;
+};
+
 export type UsedKnowledgeItem = {
   id: string;
   name: string;
@@ -91,6 +103,8 @@ export type AnalysisResult = {
   storyboard: StoryboardShot[];
   recommendedItems: string[];
   editingNotes: string[];
+  narrativeMemory?: NarrativeMemoryResult;
+  qualityCheck?: Record<string, unknown>;
   /** LangGraph 工作流执行轨迹，方便前端后续展示“Agent 做了哪些步骤”。 */
   agentTrace?: AgentTraceStep[];
   /** 本次生成实际注入模型的知识库条目。 */

@@ -114,6 +114,46 @@ function cosineSimilarity(left: number[], right: number[]) {
   return Math.max(0, dot / Math.sqrt(leftNorm * rightNorm));
 }
 
+function formatPgVector(vector: number[]) {
+  const values = asNumberArray(vector, 64);
+  return `[${values.map((item) => Number(item.toFixed(6))).join(",")}]`;
+}
+
+type MemoryVectorRow = {
+  id: string;
+  type: MemoryItemType;
+  title: string | null;
+  content: string;
+  keywords: Prisma.JsonValue | null;
+  importance: number;
+  recency: number;
+  metadata: Prisma.JsonValue | null;
+  createdAt: Date;
+  semanticScore?: number | string | null;
+};
+
+async function syncMemoryEmbeddingVectors(prisma: Prisma.TransactionClient, versionId: string) {
+  try {
+    const rows = await prisma.memoryItem.findMany({
+      where: { versionId, isEnabled: true },
+      select: { id: true, content: true, embedding: true },
+    });
+
+    for (const row of rows) {
+      const embedding = asNumberArray(row.embedding).length
+        ? asNumberArray(row.embedding)
+        : buildLocalEmbedding(row.content);
+      await prisma.$executeRawUnsafe(
+        'UPDATE "MemoryItem" SET "embeddingVector" = $1::vector WHERE "id" = $2',
+        formatPgVector(embedding),
+        row.id,
+      );
+    }
+  } catch {
+    // pgvector is optional. JSON embeddings remain the fallback retrieval path.
+  }
+}
+
 function deriveEpisodeMemory(input: CreateProjectDto) {
   const shots = input.shots || [];
   const lastShot = shots.length ? shots[shots.length - 1] : undefined;
@@ -830,6 +870,55 @@ async function upsertStoryLoops(
 export class ProjectsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async findVectorRelatedMemories(userId: string, projectId: string, currentScript: string) {
+    const queryVector = formatPgVector(buildLocalEmbedding(currentScript));
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<MemoryVectorRow[]>(
+        `SELECT
+          "id",
+          "type",
+          "title",
+          "content",
+          "keywords",
+          "importance",
+          "recency",
+          "metadata",
+          "createdAt",
+          GREATEST(0, 1 - ("embeddingVector" <=> $1::vector)) AS "semanticScore"
+        FROM "MemoryItem"
+        WHERE "userId" = $2
+          AND "projectId" = $3
+          AND "isEnabled" = true
+          AND "embeddingVector" IS NOT NULL
+        ORDER BY "embeddingVector" <=> $1::vector ASC
+        LIMIT $4`,
+        queryVector,
+        userId,
+        projectId,
+        MEMORY_RETRIEVAL_LIMIT,
+      );
+
+      return rows.map((memory, index) => {
+        const semanticScore = clamp01(memory.semanticScore, 0);
+        return {
+          id: memory.id,
+          type: memory.type,
+          title: memory.title,
+          content: memory.content,
+          keywords: memory.keywords,
+          importance: memory.importance,
+          recency: memory.recency,
+          relevanceScore: memory.importance * 0.5 + semanticScore * 0.4 + memory.recency * 0.1,
+          retrievalSource: "pgvector",
+          retrievalRank: index + 1,
+          createdAt: memory.createdAt.toISOString(),
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+
   async listProjects(userId: string) {
     if (!userId) throw new BadRequestException("Authenticated user id is required");
 
@@ -900,7 +989,6 @@ export class ProjectsService {
           },
         },
         memoryItems: {
-          where: { isEnabled: true },
           orderBy: { createdAt: "desc" },
           take: 80,
           select: {
@@ -911,6 +999,7 @@ export class ProjectsService {
             keywords: true,
             importance: true,
             recency: true,
+            isEnabled: true,
             source: true,
             createdAt: true,
           },
@@ -1007,6 +1096,7 @@ export class ProjectsService {
         keywords: memory.keywords,
         importance: memory.importance,
         recency: memory.recency,
+        isEnabled: memory.isEnabled,
         source: memory.source,
         createdAt: memory.createdAt.toISOString(),
       })),
@@ -1194,7 +1284,8 @@ export class ProjectsService {
         relevanceScore: score,
         createdAt: version.createdAt.toISOString(),
       }));
-    const relatedMemories = memoryItems
+    const vectorRelatedMemories = await this.findVectorRelatedMemories(userId, project.id, currentScript);
+    const localRelatedMemories = memoryItems
       .map((memory, index) => ({
         id: memory.id,
         type: memory.type,
@@ -1204,11 +1295,14 @@ export class ProjectsService {
         importance: memory.importance,
         recency: memory.recency,
         relevanceScore: scoreMemoryItem(memory, currentScript, index),
+        retrievalSource: "local",
+        retrievalRank: index + 1,
         createdAt: memory.createdAt.toISOString(),
       }))
       .filter((memory) => memory.relevanceScore > 0)
       .sort((a, b) => b.relevanceScore - a.relevanceScore)
       .slice(0, MEMORY_RETRIEVAL_LIMIT);
+    const relatedMemories = vectorRelatedMemories.length ? vectorRelatedMemories : localRelatedMemories;
 
     const userPreferences = {
       ...DEFAULT_PROMPT_PREFERENCES,
@@ -1352,6 +1446,7 @@ export class ProjectsService {
         const memoryItems = deriveMemoryItems(input, episodeMemory, project.id, userId, version.id);
         if (memoryItems.length) {
           await prisma.memoryItem.createMany({ data: memoryItems });
+          await syncMemoryEmbeddingVectors(prisma, version.id);
         }
         await upsertCharacterProfiles(prisma, { userId, projectId: project.id, versionId: version.id, characters: characterProfiles });
         await upsertStoryLoops(prisma, { userId, projectId: project.id, versionId: version.id, loops: storyLoops });
@@ -1422,6 +1517,7 @@ export class ProjectsService {
       const memoryItems = deriveMemoryItems(input, episodeMemory, project.id, userId, version.id);
       if (memoryItems.length) {
         await prisma.memoryItem.createMany({ data: memoryItems });
+        await syncMemoryEmbeddingVectors(prisma, version.id);
       }
       await upsertCharacterProfiles(prisma, { userId, projectId: project.id, versionId: version.id, characters: characterProfiles });
       await upsertStoryLoops(prisma, { userId, projectId: project.id, versionId: version.id, loops: storyLoops });
@@ -1524,6 +1620,18 @@ export class ProjectsService {
         embedding: content ? toJson(buildLocalEmbedding(content)) : undefined,
       },
     });
+
+    if (content) {
+      try {
+        await this.prisma.$executeRawUnsafe(
+          'UPDATE "MemoryItem" SET "embeddingVector" = $1::vector WHERE "id" = $2',
+          formatPgVector(buildLocalEmbedding(content)),
+          memory.id,
+        );
+      } catch {
+        // pgvector is optional; keep the JSON embedding as the fallback.
+      }
+    }
 
     return { saved: true, memory };
   }
