@@ -299,6 +299,79 @@ export function assertNoTemplatePlaceholders(result: AnalysisResult) {
   }
 }
 
+function stringContainsTemplatePlaceholder(value: string) {
+  return placeholderRules.some((rule) => {
+    rule.pattern.lastIndex = 0;
+    return rule.pattern.test(value);
+  });
+}
+
+function buildStoryboardPromptPackage(result: AnalysisResult) {
+  return result.storyboard
+    .map((shot) =>
+      [
+        `镜头 ${shot.shotNumber}${shot.timeRange ? `｜${shot.timeRange}` : ""}`,
+        shot.scene ? `场景：${shot.scene}` : "",
+        shot.visual ? `画面：${shot.visual}` : "",
+        shot.shotType ? `景别：${shot.shotType}` : "",
+        shot.composition ? `机位/构图：${shot.composition}` : "",
+        shot.cameraMovement ? `运镜：${shot.cameraMovement}` : "",
+        shot.lighting ? `光影/色调：${shot.lighting}` : "",
+        shot.sound ? `声音：${shot.sound}` : "",
+        shot.dialogue ? `台词：${shot.dialogue}` : "",
+        shot.emotion ? `情绪：${shot.emotion}` : "",
+        shot.transition ? `转场：${shot.transition}` : "",
+        shot.shotPurpose ? `镜头目的：${shot.shotPurpose}` : "",
+        shot.firstFramePrompt ? `首帧提示词：${shot.firstFramePrompt}` : "",
+        shot.videoPrompt ? `视频提示词：${shot.videoPrompt}` : "",
+        shot.lastFramePrompt ? `尾帧提示词：${shot.lastFramePrompt}` : "",
+        shot.negativePrompt ? `负面提示词：${shot.negativePrompt}` : "",
+        shot.concisePrompt ? `精简提示词：${shot.concisePrompt}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    )
+    .join("\n\n");
+}
+
+function buildFinalPromptPackage(result: AnalysisResult) {
+  const workflow = result.workflow;
+  const storyboardPromptPackage = buildStoryboardPromptPackage(result);
+  const parts = [
+    ["核心主题", workflow?.coreTheme || result.title],
+    ["视频参数锁定", workflow?.videoParameterLock || `总时长：${result.duration}\n整体风格：${result.style}`],
+    ["整体风格", result.style],
+    ["完整视频总提示词", workflow?.fullVideoPrompt || result.optimizedScript],
+    ["负面提示词", workflow?.fullNegativePrompt],
+    ["镜头画面 + 时间轴 + 声音/台词", workflow?.shotPromptText || storyboardPromptPackage],
+    ["每个镜头完整提示词", storyboardPromptPackage],
+    ["剪辑建议", workflow?.editingPlan || result.editingNotes?.join("\n")],
+    ["精简版提示词", workflow?.concisePrompt || result.recommendedItems?.join("\n")],
+  ] as const;
+
+  return parts
+    .flatMap(([title, value]) => {
+      if (typeof value !== "string" || !value.trim()) return [];
+      return [`${title}\n${value.trim()}`];
+    })
+    .join("\n\n");
+}
+
+export function repairTemplatePlaceholders<T extends AnalysisResult>(result: T): T {
+  const finalPromptPackage = result.workflow?.finalPromptPackage;
+  if (!finalPromptPackage || !stringContainsTemplatePlaceholder(finalPromptPackage)) {
+    return result;
+  }
+
+  return {
+    ...result,
+    workflow: {
+      ...result.workflow,
+      finalPromptPackage: buildFinalPromptPackage(result),
+    },
+  };
+}
+
 function isTemplatePlaceholderError(error: unknown): error is TemplatePlaceholderError {
   return error instanceof TemplatePlaceholderError || (error instanceof Error && error.name === "TemplatePlaceholderError");
 }
@@ -317,7 +390,7 @@ export async function runWithTemplatePlaceholderRetry<T>(
   operation: (attempt: number, retryInstruction?: string) => Promise<T>,
   context: { requestId?: string; provider?: string; model?: string } = {},
 ) {
-  const maxRetries = 1;
+  const maxRetries = 5;
   let retryInstruction: string | undefined;
 
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
@@ -440,19 +513,37 @@ export function normalizeDuration(duration: string | undefined, script: string) 
   return `${Number.isInteger(seconds) ? seconds.toFixed(0) : seconds.toFixed(1)}秒`;
 }
 
+function parseDurationSeconds(duration: string) {
+  const match = duration.match(/\d+(?:\.\d+)?/);
+  const seconds = match ? Number(match[0]) : 15;
+  return Number.isFinite(seconds) ? Math.min(15, Math.max(4, seconds)) : 15;
+}
+
+function formatDurationSeconds(seconds: number) {
+  return Number.isInteger(seconds) ? seconds.toFixed(0) : seconds.toFixed(1);
+}
+
+function buildDurationBudgetRange(duration: string) {
+  const upperSeconds = parseDurationSeconds(duration);
+  const lowerSeconds = Math.max(4, upperSeconds - 1);
+  return `${formatDurationSeconds(lowerSeconds)}-${formatDurationSeconds(upperSeconds)}秒`;
+}
+
 export function normalizeAnalysisInput<T extends Pick<AnalyzeScriptInput, "script" | "duration">>(input: T): T & { duration: string } {
   return { ...input, duration: normalizeDuration(input.duration, input.script) };
 }
 
 function buildShotCountGuidance(input: Pick<AnalyzeScriptInput, "script" | "duration">) {
   const duration = normalizeDuration(input.duration, input.script);
+  const durationRange = buildDurationBudgetRange(duration);
   return [
-    `用户选择的视频总时长是 ${duration}。这个时长是镜头设计预算，必须锁定在 4-15 秒内。`,
-    `基础视频规格必须锁定：总时长：${duration}；画幅：16:9；帧率：24fps。不要让 AI 自行改写这三项。`,
+    `用户选择的视频时长上限是 ${duration}。这个时长是镜头设计预算上限，不是必须精确等于 ${duration}；实际总时长允许在 ${durationRange} 内，由文案节奏、动作密度和情绪停顿决定。`,
+    `基础视频规格必须锁定：画幅：16:9；帧率：24fps；总时长请从 ${durationRange} 内选择最合适的一位小数时间。整体范围仍限制在 4-15 秒，最低不能低于 4 秒，最高不能超过所选上限。`,
     "先分析文案节拍：事件数量、动作数量、场景变化、情绪转折、关键物件、台词密度和信息复杂度。",
     "不要按固定区间机械决定镜头数；不要因为 13-15 秒就固定 5 个镜头，也不要因为 4-6 秒就固定 2 个镜头。",
     "镜头数量必须服务文案：极简情绪或单一动作可以用 1 个连续镜头；普通短段落可用 2-4 个镜头；信息密度高、人物反应多、线索推进多时可用 4-5 个镜头。",
-    "每个镜头都必须有明确叙事功能；时间轴总和必须等于所选总时长，并精确到小数点后一位。",
+    "所选时长代表上限前 1 秒到上限之间的可用预算，例如 15 秒可生成 14.0-15.0 秒，8 秒可生成 7.0-8.0 秒；如果选择 4 秒，实际总时长就按 4.0 秒设计。",
+    `每个镜头都必须有明确叙事功能；时间轴总和不要强制等于所选总时长，只要落在 ${durationRange} 内即可，并精确到小数点后一位。`,
   ].join("\n");
 }
 
@@ -545,7 +636,7 @@ async function callOpenAICompatible(input: AnalyzeScriptInput & { provider: stri
   if (!content) throw new Error("AI returned empty content");
 
   const parsed = JSON.parse(extractJson(content));
-  const result = AnalysisSchema.parse(parsed);
+  const result = repairTemplatePlaceholders(AnalysisSchema.parse(parsed));
   assertNoTemplatePlaceholders(result);
   logger.info("ai_provider_request_completed", {
     requestId: input.requestId,
@@ -631,7 +722,7 @@ async function callAnthropic(input: AnalyzeScriptInput) {
   const data = await res.json();
   const text = data.content?.map((c: { text?: string }) => c.text).join("\n") || "";
   const parsed = JSON.parse(extractJson(text));
-  const result = AnalysisSchema.parse(parsed);
+  const result = repairTemplatePlaceholders(AnalysisSchema.parse(parsed));
   assertNoTemplatePlaceholders(result);
   logger.info("ai_provider_request_completed", {
     requestId: input.requestId,

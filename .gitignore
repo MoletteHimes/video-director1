@@ -4,6 +4,7 @@ node_modules
 dist
 .tmp-*
 .superpowers
+.claude/
 .env
 .env.local
 .DS_Store

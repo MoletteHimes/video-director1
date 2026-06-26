@@ -25,4 +25,8 @@ test("analysis prompt treats duration as a budget and infers shot count from scr
   assert.match(aiSource, /先分析文案节拍/);
   assert.match(aiSource, /不要按固定区间机械决定镜头数/);
   assert.match(aiSource, /4-15 秒/);
+  assert.match(aiSource, /实际总时长允许在/);
+  assert.match(aiSource, /上限前 1 秒/);
+  assert.match(aiSource, /不要强制等于所选总时长/);
+  assert.doesNotMatch(aiSource, /时间轴总和必须等于所选总时长/);
 });

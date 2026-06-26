@@ -71,7 +71,7 @@ test("placeholder retry runs once and passes a stronger retry instruction", asyn
   assert.match(retryInstruction, /\u7565/);
 });
 
-test("placeholder retry stops after one retry to avoid token runaway", async () => {
+test("placeholder retry stops after five retries to avoid token runaway", async () => {
   const { TemplatePlaceholderError, runWithTemplatePlaceholderRetry } = await import(moduleUrl);
   let calls = 0;
 
@@ -86,7 +86,50 @@ test("placeholder retry stops after one retry to avoid token runaway", async () 
     /workflow\.finalPromptPackage/,
   );
 
-  assert.equal(calls, 2);
+  assert.equal(calls, 6);
+});
+
+test("placeholder repair expands optional final prompt package from complete workflow fields", async () => {
+  const { assertNoTemplatePlaceholders, repairTemplatePlaceholders } = await import(moduleUrl);
+  const fullVideoPrompt = "\u672a\u6765\u53a8\u623f\u91cc\uff0c\u5973\u6027\u89d2\u8272\u4e0eAI\u5c0f\u673a\u5668\u4eba\u5171\u540c\u51c6\u5907\u65e9\u9910\u3002";
+
+  const repaired = repairTemplatePlaceholders({
+    title: "\u6d4b\u8bd5\u7247\u6bb5",
+    contentType: "\u79d1\u5e7b\u65e5\u5e38",
+    duration: "15\u79d2",
+    style: "\u6e29\u6696\u79d1\u6280\u611f",
+    diagnosis: [],
+    optimizedScript: "\u5b8c\u6574\u89c6\u9891\u63d0\u793a\u8bcd",
+    recommendedItems: [],
+    editingNotes: [],
+    workflow: {
+      fullVideoPrompt,
+      fullNegativePrompt: "\u4e0d\u8981\u6050\u6016\uff0c\u4e0d\u8981\u8840\u8165\uff0c\u4e0d\u8981\u5b57\u5e55\u6c34\u5370\u3002",
+      shotPromptText: "\u6838\u5fc3\u4e3b\u9898\n\n\u6e29\u6696\u79d1\u6280\u751f\u6d3b\n\n\u6280\u672f\u53c2\u6570\n\n\u603b\u65f6\u957f\uff1a15\u79d2",
+      finalPromptPackage: "\u6838\u5fc3\u4e3b\u9898\u540c\u4e0a\uff0c\u5f71\u5149\u4fdd\u6301\uff0c\u6295\u5f71\u7a33\u5b9a\u8d1f\u9762\u63d0\u793a\u8bcd\uff1a\u6050\u6016\u3001\u8840\u8165\u3002",
+    },
+    storyboard: [
+      {
+        shotNumber: 1,
+        timeRange: "0.0s-4.0s",
+        scene: "\u672a\u6765\u53a8\u623f",
+        visual: "\u67d4\u548c\u6668\u5149\u4e2d\uff0cAI\u5c0f\u673a\u5668\u4eba\u5728\u684c\u9762\u79fb\u52a8\u3002",
+        shotType: "\u4e2d\u666f",
+        cameraMovement: "\u7f13\u6162\u63a8\u8fdb",
+        emotion: "\u6e29\u6696",
+        transition: "\u786c\u5207",
+        firstFramePrompt: "\u672a\u6765\u53a8\u623f\u5168\u666f\uff0c\u67d4\u548c\u6668\u5149\uff0cAI\u5c0f\u673a\u5668\u4eba\u5728\u684c\u9762\u5f85\u673a\u3002",
+        videoPrompt: "\u672a\u6765\u53a8\u623f\u91cc\uff0cAI\u5c0f\u673a\u5668\u4eba\u6cbf\u684c\u9762\u7f13\u6162\u79fb\u52a8\uff0c\u5973\u6027\u89d2\u8272\u5b89\u9759\u51c6\u5907\u65e9\u9910\u3002",
+        lastFramePrompt: "\u753b\u9762\u505c\u5728AI\u5c0f\u673a\u5668\u4eba\u9760\u8fd1\u9910\u76d8\u7684\u77ac\u95f4\uff0c\u6668\u5149\u4fdd\u6301\u67d4\u548c\u3002",
+        negativePrompt: "\u4e0d\u8981\u6050\u6016\uff0c\u4e0d\u8981\u8840\u8165\uff0c\u4e0d\u8981\u5b57\u5e55\u6c34\u5370\u3002",
+      },
+    ],
+  });
+
+  assert.doesNotThrow(() => assertNoTemplatePlaceholders(repaired));
+  assert.equal(repaired.workflow.fullVideoPrompt, fullVideoPrompt);
+  assert.doesNotMatch(repaired.workflow.finalPromptPackage, /\u540c\u4e0a/);
+  assert.match(repaired.workflow.finalPromptPackage, /\u672a\u6765\u53a8\u623f/);
 });
 
 test("AI network fetch retry runs once and then returns a response", async () => {

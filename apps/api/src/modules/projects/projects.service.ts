@@ -1349,17 +1349,8 @@ export class ProjectsService {
 
     const result = await this.prisma.$transaction(async (prisma) => {
       const project = input.projectId
-        ? await prisma.project.update({
+        ? await prisma.project.findFirst({
             where: { id: input.projectId, userId },
-            data: {
-              title: input.title,
-              originalScript: input.originalScript,
-              optimizedScript: input.optimizedScript,
-              contentType: input.contentType,
-              style: input.style,
-              duration: input.duration,
-              status: input.status || "draft",
-            },
             select: { id: true, storyBible: true, stateVector: true, openLoops: true },
           })
         : await prisma.project.create({
@@ -1375,6 +1366,7 @@ export class ProjectsService {
             },
             select: { id: true, storyBible: true, stateVector: true, openLoops: true },
           });
+      if (!project) throw new BadRequestException("Project not found");
       const storyBible = mergeStoryBible(project.storyBible, input, episodeMemory);
       const characterProfiles = deriveCharacterProfiles(input, narrativeMemory);
       const storyLoops = deriveStoryLoops(input, narrativeMemory);
@@ -1446,7 +1438,6 @@ export class ProjectsService {
         const memoryItems = deriveMemoryItems(input, episodeMemory, project.id, userId, version.id);
         if (memoryItems.length) {
           await prisma.memoryItem.createMany({ data: memoryItems });
-          await syncMemoryEmbeddingVectors(prisma, version.id);
         }
         await upsertCharacterProfiles(prisma, { userId, projectId: project.id, versionId: version.id, characters: characterProfiles });
         await upsertStoryLoops(prisma, { userId, projectId: project.id, versionId: version.id, loops: storyLoops });
@@ -1517,7 +1508,6 @@ export class ProjectsService {
       const memoryItems = deriveMemoryItems(input, episodeMemory, project.id, userId, version.id);
       if (memoryItems.length) {
         await prisma.memoryItem.createMany({ data: memoryItems });
-        await syncMemoryEmbeddingVectors(prisma, version.id);
       }
       await upsertCharacterProfiles(prisma, { userId, projectId: project.id, versionId: version.id, characters: characterProfiles });
       await upsertStoryLoops(prisma, { userId, projectId: project.id, versionId: version.id, loops: storyLoops });
@@ -1534,6 +1524,8 @@ export class ProjectsService {
 
       return { project, version, versionNumber };
     });
+
+    await syncMemoryEmbeddingVectors(this.prisma, result.version.id);
 
     return { saved: true, projectId: result.project.id, versionId: result.version.id, versionNumber: result.versionNumber };
   }

@@ -332,6 +332,8 @@ export function DashboardClient() {
   const [projectSave, setProjectSave] = useState<ProjectSaveState | null>(null);
   const [resumeProjectId, setResumeProjectId] = useState("");
   const [resumeVersionId, setResumeVersionId] = useState("");
+  const [creatingNewEpisode, setCreatingNewEpisode] = useState(false);
+  const creatingNewEpisodeRef = useRef(false);
   const [selectedShot, setSelectedShot] = useState<StoryboardShot | null>(null);
   const [referenceShot, setReferenceShot] = useState<StoryboardShot | null>(null);
   const [selectedLibraryItem, setSelectedLibraryItem] = useState<KnowledgeItem | null>(null);
@@ -368,11 +370,17 @@ export function DashboardClient() {
     const resumeScript = window.localStorage.getItem("vd_resume_script");
     const resumeProject = window.localStorage.getItem("vd_resume_project_id");
     const resumeVersion = window.localStorage.getItem("vd_resume_version_id");
+    const newEpisodeMode = window.localStorage.getItem("vd_new_episode");
+    const creatingEpisodeFromProject = newEpisodeMode === "1" || Boolean(resumeProject && !resumeScript);
     if (resumeProject && !resumeScript) {
       setScript("");
       setResumeProjectId(resumeProject || "");
       setResumeVersionId("");
+      creatingNewEpisodeRef.current = creatingEpisodeFromProject;
+      setCreatingNewEpisode(creatingEpisodeFromProject);
       setGenerationProgress("已选择历史项目，新输入文案后会生成下一集。");
+      window.localStorage.removeItem("vd_new_episode");
+      window.localStorage.removeItem("vd_resume_script");
       window.localStorage.removeItem("vd_resume_project_id");
       window.localStorage.removeItem("vd_resume_version_id");
       return;
@@ -381,19 +389,26 @@ export function DashboardClient() {
       setScript(resumeScript);
       setResumeProjectId(resumeProject || "");
       setResumeVersionId(resumeVersion || "");
+      creatingNewEpisodeRef.current = false;
+      setCreatingNewEpisode(false);
       setGenerationProgress(resumeVersion ? "已载入当前剧集，可修改后重新生成这一集。" : "已载入历史文案，可继续编辑。");
+      window.localStorage.removeItem("vd_new_episode");
       window.localStorage.removeItem("vd_resume_script");
       window.localStorage.removeItem("vd_resume_project_id");
       window.localStorage.removeItem("vd_resume_version_id");
     }
   }, []);
 
+  function getActiveResumeVersionId() {
+    return creatingNewEpisodeRef.current ? undefined : resumeVersionId || undefined;
+  }
+
   async function requestAnalysis(inputScript: string, inputDurationSeconds: number) {
     return requestAnalysisWithContext(
       inputScript,
       inputDurationSeconds,
       resumeProjectId || undefined,
-      resumeVersionId || undefined,
+      getActiveResumeVersionId(),
     );
   }
 
@@ -423,7 +438,7 @@ export function DashboardClient() {
     analysisResult: AnalysisResult,
     fullVideoPrompt: string,
     projectId: string | undefined = resumeProjectId || undefined,
-    versionId: string | undefined = resumeVersionId || undefined,
+    versionId: string | undefined = getActiveResumeVersionId(),
   ): Promise<ProjectSaveState> {
     try {
       const res = await fetch("/api/projects", {
@@ -539,7 +554,11 @@ export function DashboardClient() {
       const save = await saveAnalysisProject(script, singleResult, fullVideoPrompt);
       setProjectSave(save);
       if (save.projectId) setResumeProjectId(save.projectId);
-      if (save.versionId) setResumeVersionId(save.versionId);
+      if (save.versionId) {
+        setResumeVersionId(save.versionId);
+        creatingNewEpisodeRef.current = false;
+        setCreatingNewEpisode(false);
+      }
       setResult(singleResult);
       setGenerationProgress("生成完成。");
     } catch (err: any) {

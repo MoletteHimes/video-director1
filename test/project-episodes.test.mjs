@@ -53,6 +53,25 @@ test("new episode keeps the current project but clears the selected episode id",
   assert.match(projects, /startNewEpisode/);
   assert.match(projects, /vd_resume_project_id/);
   assert.match(projects, /removeItem\("vd_resume_version_id"\)/);
+  assert.match(projects, /setItem\("vd_new_episode",\s*"1"\)/);
   assert.match(dashboard, /resumeProject && !resumeScript/);
+  assert.match(dashboard, /newEpisodeMode === "1"/);
   assert.match(dashboard, /setResumeProjectId\(resumeProject \|\| ""\)/);
+  assert.match(dashboard, /setResumeVersionId\(""\)/);
+  assert.match(dashboard, /creatingNewEpisodeRef/);
+  assert.match(dashboard, /getActiveResumeVersionId/);
+  assert.match(dashboard, /creatingNewEpisodeRef\.current \? undefined : resumeVersionId \|\| undefined/);
+});
+
+test("saving a later episode does not overwrite the series project title", () => {
+  const service = readFileSync("apps/api/src/modules/projects/projects.service.ts", "utf8");
+
+  const existingProjectLookup = service.match(
+    /input\.projectId\s*\?\s*await prisma\.project\.findFirst\(\{[\s\S]*?\}\)\s*:\s*await prisma\.project\.create/,
+  )?.[0] || "";
+
+  assert.ok(existingProjectLookup, "expected existing project lookup branch");
+  assert.doesNotMatch(existingProjectLookup, /title:\s*input\.title/);
+  assert.doesNotMatch(existingProjectLookup, /originalScript:\s*input\.originalScript/);
+  assert.match(service, /projectVersion\.(update|create)\(\{[\s\S]*title:\s*input\.title/);
 });

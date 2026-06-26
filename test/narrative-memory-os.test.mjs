@@ -44,7 +44,7 @@ test("project service writes and retrieves L1-L5 director memory", () => {
   assert.match(service, /characterProfiles/);
   assert.match(service, /storyLoops/);
   assert.match(service, /qualityCheck: toJson\(qualityCheck\)/);
-  assert.match(service, /await syncMemoryEmbeddingVectors\(prisma, version\.id\)/);
+  assert.match(service, /await syncMemoryEmbeddingVectors\(this\.prisma, result\.version\.id\)/);
   assert.match(service, /const vectorRelatedMemories = await this\.findVectorRelatedMemories/);
 });
 
@@ -63,7 +63,7 @@ test("AI result can carry hidden structured memory without changing full video p
   assert.match(proxy, /fullVideoPrompt: payload\.fullVideoPrompt/);
 });
 
-test("project page exposes memory management surfaces", () => {
+test("project page keeps director memory tools hidden from normal users", () => {
   const projects = readFileSync("components/ProjectsClient.tsx", "utf8");
 
   assert.match(projects, /storyBible/);
@@ -71,7 +71,6 @@ test("project page exposes memory management surfaces", () => {
   assert.match(projects, /storyLoops/);
   assert.match(projects, /memoryItems/);
   assert.match(projects, /qualityCheck/);
-  assert.match(projects, /Director Memory/);
-  assert.match(projects, /Retrieval Debug/);
-  assert.match(projects, /toggleMemory/);
+  assert.match(projects, /SHOW_DIRECTOR_MEMORY = false/);
+  assert.match(projects, /SHOW_DIRECTOR_MEMORY &&/);
 });

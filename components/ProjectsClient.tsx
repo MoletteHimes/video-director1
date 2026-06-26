@@ -13,6 +13,8 @@ import {
   Trash2,
 } from "lucide-react";
 
+const SHOW_DIRECTOR_MEMORY = false;
+
 type ProjectSummary = {
   id: string;
   title: string;
@@ -249,6 +251,7 @@ export function ProjectsClient() {
 
   function resumeEditing() {
     if (!project || !selectedVersion) return;
+    window.localStorage.removeItem("vd_new_episode");
     window.localStorage.setItem("vd_resume_script", selectedVersion.originalScript || project.originalScript || "");
     window.localStorage.setItem("vd_resume_project_id", project.id);
     window.localStorage.setItem("vd_resume_version_id", selectedVersion.id);
@@ -258,8 +261,10 @@ export function ProjectsClient() {
   function startNewEpisode() {
     if (project?.id) {
       window.localStorage.setItem("vd_resume_project_id", project.id);
+      window.localStorage.setItem("vd_new_episode", "1");
     } else {
       window.localStorage.removeItem("vd_resume_project_id");
+      window.localStorage.removeItem("vd_new_episode");
     }
     window.localStorage.removeItem("vd_resume_script");
     window.localStorage.removeItem("vd_resume_version_id");
@@ -442,7 +447,7 @@ export function ProjectsClient() {
             <div className="mb-2 text-xs uppercase tracking-wide text-cyan-200/70">Project History</div>
             <h1 className="text-3xl font-black text-white">我的项目</h1>
             <p className="mt-2 text-sm text-slate-400">
-              这里保存生成过的视频提示词、剧集记录、镜头表、分镜图和导演记忆。
+              这里保存生成过的视频提示词、剧集记录、镜头表和分镜图。
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -689,142 +694,144 @@ export function ProjectsClient() {
                 </div>
               )}
 
-              <div className="rounded-2xl border border-cyan-300/12 bg-black/20 p-4">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-cyan-200/70">Director Memory</div>
-                    <h3 className="mt-1 text-lg font-black text-white">导演记忆</h3>
+              {SHOW_DIRECTOR_MEMORY && (
+                <div className="rounded-2xl border border-cyan-300/12 bg-black/20 p-4">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-cyan-200/70">Director Memory</div>
+                      <h3 className="mt-1 text-lg font-black text-white">导演记忆</h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={editStoryBible}
+                      className="rounded-xl border border-cyan-300/18 bg-cyan-300/10 px-3 py-2 text-sm font-semibold text-cyan-50 transition hover:bg-cyan-300/16"
+                    >
+                      编辑项目圣经
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={editStoryBible}
-                    className="rounded-xl border border-cyan-300/18 bg-cyan-300/10 px-3 py-2 text-sm font-semibold text-cyan-50 transition hover:bg-cyan-300/16"
-                  >
-                    编辑项目圣经
-                  </button>
-                </div>
 
-                <div className="grid gap-4 xl:grid-cols-2">
-                  <div className="rounded-xl border border-white/10 bg-slate-950/55 p-3">
-                    <div className="mb-2 text-sm font-bold text-white">storyBible / 项目圣经</div>
-                    <pre className="max-h-56 overflow-auto whitespace-pre-wrap text-xs leading-5 text-slate-400">
-                      {formatJson(project.storyBible || {})}
-                    </pre>
-                  </div>
-                  <div className="rounded-xl border border-white/10 bg-slate-950/55 p-3">
-                    <div className="mb-2 text-sm font-bold text-white">qualityCheck / 质量自检</div>
-                    <pre className="max-h-56 overflow-auto whitespace-pre-wrap text-xs leading-5 text-slate-400">
-                      {formatJson(selectedVersion.qualityCheck || {})}
-                    </pre>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-4 xl:grid-cols-3">
-                  <div className="rounded-xl border border-white/10 bg-slate-950/55 p-3">
-                    <div className="mb-3 text-sm font-bold text-white">characterProfiles / 角色档案</div>
-                    <div className="space-y-2">
-                      {(project.characterProfiles || []).map((character) => (
-                        <div key={character.id} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="font-semibold text-white">{character.name}</div>
-                              <div className="mt-1 text-xs text-slate-500">{character.role || "角色"} · {character.locked ? "已锁定" : "未锁定"}</div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => editCharacter(character)}
-                              className="rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-200 hover:bg-white/[0.08]"
-                            >
-                              编辑
-                            </button>
-                          </div>
-                          <p className="mt-2 text-xs leading-5 text-slate-400">
-                            {character.visualLock || character.appearance || character.personality || "-"}
-                          </p>
-                        </div>
-                      ))}
-                      {!(project.characterProfiles || []).length && <div className="text-xs text-slate-500">暂无角色记忆</div>}
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    <div className="rounded-xl border border-white/10 bg-slate-950/55 p-3">
+                      <div className="mb-2 text-sm font-bold text-white">storyBible / 项目圣经</div>
+                      <pre className="max-h-56 overflow-auto whitespace-pre-wrap text-xs leading-5 text-slate-400">
+                        {formatJson(project.storyBible || {})}
+                      </pre>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-slate-950/55 p-3">
+                      <div className="mb-2 text-sm font-bold text-white">qualityCheck / 质量自检</div>
+                      <pre className="max-h-56 overflow-auto whitespace-pre-wrap text-xs leading-5 text-slate-400">
+                        {formatJson(selectedVersion.qualityCheck || {})}
+                      </pre>
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-white/10 bg-slate-950/55 p-3">
-                    <div className="mb-3 text-sm font-bold text-white">storyLoops / 伏笔列表</div>
-                    <div className="space-y-2">
-                      {(project.storyLoops || []).map((loop) => (
-                        <div key={loop.id} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="font-semibold text-white">{loop.title}</div>
-                              <div className="mt-1 text-xs text-slate-500">{loop.status} · {loop.importance.toFixed(2)}</div>
-                            </div>
-                            {loop.status !== "RESOLVED" && (
+                  <div className="mt-4 grid gap-4 xl:grid-cols-3">
+                    <div className="rounded-xl border border-white/10 bg-slate-950/55 p-3">
+                      <div className="mb-3 text-sm font-bold text-white">characterProfiles / 角色档案</div>
+                      <div className="space-y-2">
+                        {(project.characterProfiles || []).map((character) => (
+                          <div key={character.id} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="font-semibold text-white">{character.name}</div>
+                                <div className="mt-1 text-xs text-slate-500">{character.role || "角色"} · {character.locked ? "已锁定" : "未锁定"}</div>
+                              </div>
                               <button
                                 type="button"
-                                onClick={() => resolveStoryLoop(loop)}
+                                onClick={() => editCharacter(character)}
                                 className="rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-200 hover:bg-white/[0.08]"
                               >
-                                标记解决
+                                编辑
                               </button>
-                            )}
+                            </div>
+                            <p className="mt-2 text-xs leading-5 text-slate-400">
+                              {character.visualLock || character.appearance || character.personality || "-"}
+                            </p>
                           </div>
-                          <p className="mt-2 text-xs leading-5 text-slate-400">{loop.description || "-"}</p>
-                        </div>
-                      ))}
-                      {!(project.storyLoops || []).length && <div className="text-xs text-slate-500">暂无伏笔记忆</div>}
+                        ))}
+                        {!(project.characterProfiles || []).length && <div className="text-xs text-slate-500">暂无角色记忆</div>}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="rounded-xl border border-white/10 bg-slate-950/55 p-3">
-                    <div className="mb-1 text-sm font-bold text-white">Retrieval Debug / 检索记忆库</div>
-                    <p className="mb-3 text-xs leading-5 text-slate-500">
-                      score = importance * 0.5 + relevance * 0.4 + recency * 0.1
-                    </p>
-                    <div className="max-h-96 space-y-2 overflow-auto pr-1">
-                      {(project.memoryItems || []).map((memory) => (
-                        <div
-                          key={memory.id}
-                          className={`rounded-lg border p-3 ${
-                            memory.isEnabled === false
-                              ? "border-white/5 bg-white/[0.015] opacity-55"
-                              : "border-white/10 bg-white/[0.03]"
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="font-semibold text-white">{memory.title || memory.type}</div>
-                              <div className="mt-1 text-xs text-slate-500">
-                                {memory.type} · I {memory.importance.toFixed(2)} · R {memory.recency.toFixed(2)} ·{" "}
-                                {memory.isEnabled === false ? "disabled" : "enabled"} · {memory.source || "local"}
+                    <div className="rounded-xl border border-white/10 bg-slate-950/55 p-3">
+                      <div className="mb-3 text-sm font-bold text-white">storyLoops / 伏笔列表</div>
+                      <div className="space-y-2">
+                        {(project.storyLoops || []).map((loop) => (
+                          <div key={loop.id} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="font-semibold text-white">{loop.title}</div>
+                                <div className="mt-1 text-xs text-slate-500">{loop.status} · {loop.importance.toFixed(2)}</div>
                               </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => toggleMemory(memory)}
-                              className="rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-200 hover:bg-white/[0.08]"
-                            >
-                              {memory.isEnabled === false ? "启用" : "停用"}
-                            </button>
-                          </div>
-                          {Array.isArray(memory.keywords) && memory.keywords.length ? (
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {memory.keywords.slice(0, 8).map((keyword, index) => (
-                                <span
-                                  key={`${String(keyword)}-${index}`}
-                                  className="rounded-full border border-cyan-200/15 px-2 py-0.5 text-[11px] text-cyan-100/70"
+                              {loop.status !== "RESOLVED" && (
+                                <button
+                                  type="button"
+                                  onClick={() => resolveStoryLoop(loop)}
+                                  className="rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-200 hover:bg-white/[0.08]"
                                 >
-                                  {String(keyword)}
-                                </span>
-                              ))}
+                                  标记解决
+                                </button>
+                              )}
                             </div>
-                          ) : null}
-                          <p className="mt-2 text-xs leading-5 text-slate-400">{memory.content}</p>
-                        </div>
-                      ))}
-                      {!(project.memoryItems || []).length && <div className="text-xs text-slate-500">暂无检索记忆</div>}
+                            <p className="mt-2 text-xs leading-5 text-slate-400">{loop.description || "-"}</p>
+                          </div>
+                        ))}
+                        {!(project.storyLoops || []).length && <div className="text-xs text-slate-500">暂无伏笔记忆</div>}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-white/10 bg-slate-950/55 p-3">
+                      <div className="mb-1 text-sm font-bold text-white">Retrieval Debug / 检索记忆库</div>
+                      <p className="mb-3 text-xs leading-5 text-slate-500">
+                        score = importance * 0.5 + relevance * 0.4 + recency * 0.1
+                      </p>
+                      <div className="max-h-96 space-y-2 overflow-auto pr-1">
+                        {(project.memoryItems || []).map((memory) => (
+                          <div
+                            key={memory.id}
+                            className={`rounded-lg border p-3 ${
+                              memory.isEnabled === false
+                                ? "border-white/5 bg-white/[0.015] opacity-55"
+                                : "border-white/10 bg-white/[0.03]"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="font-semibold text-white">{memory.title || memory.type}</div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  {memory.type} · I {memory.importance.toFixed(2)} · R {memory.recency.toFixed(2)} ·{" "}
+                                  {memory.isEnabled === false ? "disabled" : "enabled"} · {memory.source || "local"}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => toggleMemory(memory)}
+                                className="rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-200 hover:bg-white/[0.08]"
+                              >
+                                {memory.isEnabled === false ? "启用" : "停用"}
+                              </button>
+                            </div>
+                            {Array.isArray(memory.keywords) && memory.keywords.length ? (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {memory.keywords.slice(0, 8).map((keyword, index) => (
+                                  <span
+                                    key={`${String(keyword)}-${index}`}
+                                    className="rounded-full border border-cyan-200/15 px-2 py-0.5 text-[11px] text-cyan-100/70"
+                                  >
+                                    {String(keyword)}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
+                            <p className="mt-2 text-xs leading-5 text-slate-400">{memory.content}</p>
+                          </div>
+                        ))}
+                        {!(project.memoryItems || []).length && <div className="text-xs text-slate-500">暂无检索记忆</div>}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               <div className="overflow-x-auto rounded-2xl border border-cyan-300/12">
                 <table className="w-full min-w-[980px] border-collapse text-left text-sm">
