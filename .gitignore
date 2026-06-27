@@ -18,3 +18,4 @@ public/previews/*.mov
 public/project-assets/
 .backup-previews-original-*/
 .compressed-previews-*/
+backups/
