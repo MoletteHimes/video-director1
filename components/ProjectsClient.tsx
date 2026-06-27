@@ -258,16 +258,27 @@ export function ProjectsClient() {
     window.location.href = "/dashboard";
   }
 
+  function clearDashboardProjectContext() {
+    window.localStorage.removeItem("vd_resume_script");
+    window.localStorage.removeItem("vd_resume_project_id");
+    window.localStorage.removeItem("vd_resume_version_id");
+    window.localStorage.removeItem("vd_new_episode");
+  }
+
+  function startNewProject() {
+    clearDashboardProjectContext();
+    window.location.href = "/dashboard";
+  }
+
   function startNewEpisode() {
-    if (project?.id) {
-      window.localStorage.setItem("vd_resume_project_id", project.id);
-      window.localStorage.setItem("vd_new_episode", "1");
-    } else {
-      window.localStorage.removeItem("vd_resume_project_id");
-      window.localStorage.removeItem("vd_new_episode");
+    if (!project?.id) {
+      startNewProject();
+      return;
     }
     window.localStorage.removeItem("vd_resume_script");
     window.localStorage.removeItem("vd_resume_version_id");
+    window.localStorage.setItem("vd_resume_project_id", project.id);
+    window.localStorage.setItem("vd_new_episode", "1");
     window.location.href = "/dashboard";
   }
 
@@ -466,7 +477,7 @@ export function ProjectsClient() {
             </button>
             <button
               type="button"
-              onClick={startNewEpisode}
+              onClick={startNewProject}
               className="projects-action-button projects-action-primary"
             >
               <Edit3 className="h-4 w-4" />

@@ -63,6 +63,26 @@ test("new episode keeps the current project but clears the selected episode id",
   assert.match(dashboard, /creatingNewEpisodeRef\.current \? undefined : resumeVersionId \|\| undefined/);
 });
 
+test("top-level new generation starts a fresh project instead of a new episode", () => {
+  const projects = readFileSync("components/ProjectsClient.tsx", "utf8");
+
+  assert.match(projects, /function startNewProject\(\)/);
+  assert.match(projects, /onClick=\{startNewProject\}/);
+
+  const clearContextBody = projects.match(/function clearDashboardProjectContext\(\) \{[\s\S]*?\n  \}/)?.[0] || "";
+  assert.ok(clearContextBody, "expected clearDashboardProjectContext body");
+  assert.match(clearContextBody, /removeItem\("vd_resume_script"\)/);
+  assert.match(clearContextBody, /removeItem\("vd_resume_project_id"\)/);
+  assert.match(clearContextBody, /removeItem\("vd_resume_version_id"\)/);
+  assert.match(clearContextBody, /removeItem\("vd_new_episode"\)/);
+
+  const newProjectBody = projects.match(/function startNewProject\(\) \{[\s\S]*?\n  \}/)?.[0] || "";
+  assert.ok(newProjectBody, "expected startNewProject body");
+  assert.match(newProjectBody, /clearDashboardProjectContext\(\)/);
+  assert.doesNotMatch(newProjectBody, /setItem\("vd_resume_project_id"/);
+  assert.doesNotMatch(newProjectBody, /setItem\("vd_new_episode"/);
+});
+
 test("saving a later episode does not overwrite the series project title", () => {
   const service = readFileSync("apps/api/src/modules/projects/projects.service.ts", "utf8");
 
