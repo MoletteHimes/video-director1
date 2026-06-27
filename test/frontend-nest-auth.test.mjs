@@ -60,3 +60,18 @@ test("Next auth proxy routes store the NestJS JWT in an HttpOnly cookie", () => 
   assert.match(meRoute, /proxyNestAuthMe\(request\)/);
   assert.match(logoutRoute, /clearNestAuthCookie/);
 });
+
+test("auth cookies are secure only when the configured app URL is HTTPS", () => {
+  const helper = readFileSync("lib/cookie-security.ts", "utf8");
+  const authProxy = readFileSync("lib/nest-auth-proxy.ts", "utf8");
+  const adminLogin = readFileSync("app/api/admin/login/route.ts", "utf8");
+  const adminLogout = readFileSync("app/api/admin/logout/route.ts", "utf8");
+
+  assert.match(helper, /NEXT_PUBLIC_APP_URL/);
+  assert.match(helper, /protocol === "https:"/);
+  assert.match(helper, /AUTH_COOKIE_SECURE/);
+  assert.match(authProxy, /secure: shouldUseSecureCookie\(\)/);
+  assert.match(adminLogin, /secure: shouldUseSecureCookie\(\)/);
+  assert.match(adminLogout, /secure: shouldUseSecureCookie\(\)/);
+  assert.doesNotMatch(authProxy, /secure: process\.env\.NODE_ENV === "production"/);
+});

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ADMIN_SESSION_COOKIE, createAdminSessionCookie } from "@/lib/admin-auth";
+import { shouldUseSecureCookie } from "@/lib/cookie-security";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
   response.cookies.set(ADMIN_SESSION_COOKIE, createAdminSessionCookie(expectedPassword), {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldUseSecureCookie(),
     path: "/",
     maxAge: 60 * 60 * 8,
   });

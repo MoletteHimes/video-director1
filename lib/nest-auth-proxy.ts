@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { shouldUseSecureCookie } from "@/lib/cookie-security";
 
 export const NEST_AUTH_TOKEN_COOKIE = "vd_access_token";
 
@@ -55,7 +56,7 @@ export function clearNestAuthCookie(response: NextResponse) {
   response.cookies.set(NEST_AUTH_TOKEN_COOKIE, "", {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldUseSecureCookie(),
     path: "/",
     maxAge: 0,
   });
@@ -126,7 +127,7 @@ export async function proxyNestAuthWithBody(request: NextRequest, action: "login
   response.cookies.set(NEST_AUTH_TOKEN_COOKIE, accessToken, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldUseSecureCookie(),
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
   });
