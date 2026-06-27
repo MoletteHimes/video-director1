@@ -95,7 +95,7 @@ function CreateUserModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/72 p-4 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="w-full max-w-lg rounded-2xl border border-cyan-300/20 bg-slate-950 p-5 shadow-2xl"
+        className="admin-modal-panel w-full max-w-lg rounded-2xl p-5 shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-5 flex items-start justify-between gap-3">
@@ -203,7 +203,7 @@ function EditUserModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/72 p-4 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="w-full max-w-lg rounded-2xl border border-cyan-300/20 bg-slate-950 p-5 shadow-2xl"
+        className="admin-modal-panel w-full max-w-lg rounded-2xl p-5 shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-5 flex items-start justify-between gap-3">
@@ -357,19 +357,22 @@ export default function AdminUsersPage() {
 
   return (
     <AdminShell>
-      <div className="mb-2 text-xs uppercase tracking-wide text-cyan-200/70">User Management</div>
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-white">用户管理</h1>
-          <p className="mt-2 text-sm text-slate-400">共 {meta.total} 位用户。可搜索、手动新增、改套餐 / 额度、停用 / 启用、删除。</p>
+      <div className="admin-users-shell mx-auto">
+        <div className="admin-users-header rounded-2xl p-5">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <div className="mb-2 text-xs uppercase tracking-wide text-cyan-200/70">User Management</div>
+              <h1 className="text-3xl font-black text-white">用户管理</h1>
+              <p className="mt-2 text-sm text-slate-400">共 {meta.total} 位用户。可搜索、手动新增、改套餐 / 额度、停用 / 启用、删除。</p>
+            </div>
+            <button onClick={() => setCreating(true)} className="projects-action-button projects-action-primary">
+              <UserPlus className="h-4 w-4" />
+              新增用户
+            </button>
+          </div>
         </div>
-        <button onClick={() => setCreating(true)} className="primary-neon inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold">
-          <UserPlus className="h-4 w-4" />
-          新增用户
-        </button>
-      </div>
 
-      <div className="mt-5 flex flex-wrap items-center gap-3">
+      <div className="admin-users-filterbar mt-5 flex flex-wrap items-center gap-3 rounded-2xl p-3">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-cyan-200/60" />
           <input
@@ -397,9 +400,9 @@ export default function AdminUsersPage() {
 
       {error && <p className="mt-4 rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-100">{error}</p>}
 
-      <div className="mt-5 overflow-x-auto rounded-2xl border border-cyan-300/12">
+      <div className="admin-users-table-shell mt-5 overflow-x-auto rounded-2xl">
         <table className="w-full min-w-[1080px] border-collapse text-left text-sm">
-          <thead className="bg-cyan-300/[0.06] text-xs uppercase text-cyan-100/70">
+          <thead className="bg-white/[0.035] text-xs uppercase text-slate-400">
             <tr>
               <th className="p-3">账号</th>
               <th className="p-3">角色</th>
@@ -428,7 +431,7 @@ export default function AdminUsersPage() {
               </tr>
             ) : (
               rows.map((user) => (
-                <tr key={user.id} className="border-t border-cyan-300/10 text-slate-300">
+                <tr key={user.id} className="admin-table-row">
                   <td className="p-3 font-semibold text-white">{displayName(user)}</td>
                   <td className="p-3">{user.role}</td>
                   <td className="p-3">{user.plan}</td>
@@ -444,14 +447,14 @@ export default function AdminUsersPage() {
                   <td className="p-3 text-slate-400">{user.loginCount}</td>
                   <td className="p-3">
                     <div className="flex items-center gap-2">
-                      <button onClick={() => setEditing(user)} className="rounded-lg border border-cyan-300/18 bg-cyan-300/10 px-2.5 py-1.5 text-xs font-semibold text-cyan-50 hover:bg-cyan-300/16">
+                      <button onClick={() => setEditing(user)} className="admin-mini-button border-cyan-300/18 bg-cyan-300/10 text-cyan-50 hover:bg-cyan-300/16">
                         编辑
                       </button>
-                      <button onClick={() => quickToggleStatus(user)} disabled={busyId === user.id} className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs font-semibold text-slate-100 hover:bg-white/[0.08] disabled:opacity-60">
+                      <button onClick={() => quickToggleStatus(user)} disabled={busyId === user.id} className="admin-mini-button disabled:opacity-60">
                         <Power className="h-3.5 w-3.5" />
                         {user.status === "ACTIVE" ? "停用" : "启用"}
                       </button>
-                      <button onClick={() => deleteUser(user)} disabled={busyId === user.id} className="inline-flex items-center gap-1 rounded-lg border border-red-300/20 bg-red-500/10 px-2.5 py-1.5 text-xs font-semibold text-red-50 hover:bg-red-500/16 disabled:opacity-60">
+                      <button onClick={() => deleteUser(user)} disabled={busyId === user.id} className="admin-mini-button border-red-300/20 bg-red-500/10 text-red-50 hover:bg-red-500/16 disabled:opacity-60">
                         <Trash2 className="h-3.5 w-3.5" />
                         删除
                       </button>
@@ -480,6 +483,7 @@ export default function AdminUsersPage() {
 
       {creating && <CreateUserModal onClose={() => setCreating(false)} onSaved={refreshFromFirstPage} />}
       {editing && <EditUserModal user={editing} onClose={() => setEditing(null)} onSaved={load} />}
+      </div>
     </AdminShell>
   );
 }

@@ -22,8 +22,8 @@ export function LibraryCard({
   return (
     <button
       onClick={() => onOpen(item)}
-      className={`group relative w-full overflow-hidden rounded-xl border bg-black/25 text-left transition hover:-translate-y-0.5 hover:border-cyan-300/35 hover:bg-cyan-300/[0.04] ${
-        selected ? "border-cyan-200 shadow-neon" : "border-white/10"
+      className={`library-material-card group relative w-full overflow-hidden rounded-[1.15rem] text-left ${
+        selected ? "border-cyan-200 shadow-neon" : ""
       }`}
     >
       {selectable && (
@@ -39,9 +39,9 @@ export function LibraryCard({
       )}
       <PreviewAnimation item={item} type={item.previewType} playback="hover" />
 
-      <div className="px-3 pb-3 pt-2">
+      <div className="px-4 pb-4 pt-3">
         <div className="mb-1">
-          <div className="min-w-0 truncate text-xs leading-5 text-slate-300">
+          <div className="min-w-0 truncate text-xs leading-5 text-slate-400">
             {tagText}
           </div>
         </div>

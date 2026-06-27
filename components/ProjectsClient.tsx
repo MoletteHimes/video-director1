@@ -440,9 +440,9 @@ export function ProjectsClient() {
   }
 
   return (
-    <div className="relative min-h-[calc(100vh-4rem)] text-slate-100">
-      <div className="mb-5 rounded-2xl border border-cyan-300/14 bg-slate-950/70 p-5 shadow-[0_20px_70px_rgba(0,0,0,0.24)] backdrop-blur-xl">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="projects-page-shell relative min-h-[calc(100vh-4rem)] text-slate-100">
+      <div className="projects-header mb-5 rounded-2xl p-5 md:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="mb-2 text-xs uppercase tracking-wide text-cyan-200/70">Project History</div>
             <h1 className="text-3xl font-black text-white">我的项目</h1>
@@ -455,10 +455,10 @@ export function ProjectsClient() {
               type="button"
               onClick={deleteCheckedProjects}
               disabled={deletingProjects}
-              className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition ${
+              className={`projects-action-button ${
                 deleteMode
-                  ? "border-red-300/30 bg-red-500/15 text-red-50 hover:bg-red-500/20"
-                  : "border-white/10 bg-white/[0.04] text-slate-100 hover:bg-white/[0.08]"
+                  ? "projects-action-danger"
+                  : ""
               } disabled:cursor-not-allowed disabled:opacity-60`}
             >
               {deletingProjects ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
@@ -467,7 +467,7 @@ export function ProjectsClient() {
             <button
               type="button"
               onClick={startNewEpisode}
-              className="inline-flex items-center gap-2 rounded-xl border border-cyan-300/18 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-50 transition hover:bg-cyan-300/16"
+              className="projects-action-button projects-action-primary"
             >
               <Edit3 className="h-4 w-4" />
               新建生成
@@ -492,8 +492,8 @@ export function ProjectsClient() {
       )}
 
       <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
-        <section className="rounded-2xl border border-cyan-300/12 bg-slate-950/58 p-3 backdrop-blur-xl">
-          <div className="mb-3 flex items-center justify-between px-2">
+        <section className="projects-list-panel rounded-2xl p-3">
+          <div className="mb-3 flex items-center justify-between px-2 pt-1">
             <h2 className="font-bold text-white">项目列表</h2>
             {loadingList && <Loader2 className="h-4 w-4 animate-spin text-cyan-100" />}
           </div>
@@ -518,10 +518,10 @@ export function ProjectsClient() {
                 <button
                   key={item.id}
                   onClick={() => handleProjectClick(item.id)}
-                  className={`w-full rounded-xl border p-3 text-left transition ${
+                  className={`projects-list-item w-full rounded-xl p-3 text-left ${
                     active
-                      ? "border-cyan-200/50 bg-cyan-300/[0.09]"
-                      : "border-white/8 bg-white/[0.03] hover:border-cyan-300/22 hover:bg-cyan-300/[0.05]"
+                      ? "projects-list-item-active"
+                      : ""
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -553,7 +553,7 @@ export function ProjectsClient() {
           </div>
         </section>
 
-        <section className="min-h-[520px] rounded-2xl border border-cyan-300/12 bg-slate-950/58 p-5 backdrop-blur-xl">
+        <section className="projects-detail-panel min-h-[520px] rounded-2xl p-5 md:p-6">
           {loadingDetail && (
             <div className="flex h-80 items-center justify-center gap-3 text-sm text-slate-400">
               <Loader2 className="h-5 w-5 animate-spin text-cyan-100" />
@@ -597,14 +597,14 @@ export function ProjectsClient() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={resumeEditing}
-                    className="inline-flex items-center gap-2 rounded-xl border border-cyan-300/18 bg-cyan-300/10 px-3 py-2 text-sm font-semibold text-cyan-50 transition hover:bg-cyan-300/16"
+                    className="projects-action-button projects-action-primary"
                   >
                     <RefreshCw className="h-4 w-4" />
                     继续编辑
                   </button>
                   <button
                     onClick={startNewEpisode}
-                    className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.08]"
+                    className="projects-action-button"
                   >
                     <Edit3 className="h-4 w-4" />
                     新建一集
@@ -612,21 +612,21 @@ export function ProjectsClient() {
                   <button
                     onClick={deleteSelectedEpisode}
                     disabled={deletingEpisode}
-                    className="inline-flex items-center gap-2 rounded-xl border border-red-300/20 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-50 transition hover:bg-red-500/16 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="projects-action-button projects-action-danger disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {deletingEpisode ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                     删除本集
                   </button>
                   <button
                     onClick={copyPrompt}
-                    className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.08]"
+                    className="projects-action-button"
                   >
                     <Copy className="h-4 w-4" />
                     复制提示词
                   </button>
                   <button
                     onClick={downloadDocx}
-                    className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.08]"
+                    className="projects-action-button"
                   >
                     <Download className="h-4 w-4" />
                     下载 DOCX
@@ -652,7 +652,7 @@ export function ProjectsClient() {
               </div>
 
               <div className="grid gap-4 lg:grid-cols-2">
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="projects-content-card rounded-2xl p-4">
                   <div className="mb-3 flex items-center gap-2 text-sm font-bold text-white">
                     <FileText className="h-4 w-4 text-cyan-100" />
                     生成文案
@@ -661,7 +661,7 @@ export function ProjectsClient() {
                     {selectedVersion.optimizedScript || selectedVersion.originalScript}
                   </div>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="projects-content-card rounded-2xl p-4">
                   <div className="mb-3 flex items-center gap-2 text-sm font-bold text-white">
                     <ImageIcon className="h-4 w-4 text-cyan-100" />
                     分镜图
@@ -683,7 +683,7 @@ export function ProjectsClient() {
               </div>
 
               {selectedVersion.fullVideoPrompt && (
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="projects-content-card rounded-2xl p-4">
                   <div className="mb-3 flex items-center gap-2 text-sm font-bold text-white">
                     <FileText className="h-4 w-4 text-cyan-100" />
                     视频生成提示词
@@ -833,7 +833,7 @@ export function ProjectsClient() {
                 </div>
               )}
 
-              <div className="overflow-x-auto rounded-2xl border border-cyan-300/12">
+              <div className="overflow-x-auto rounded-2xl border border-slate-300/14 bg-slate-950/35">
                 <table className="w-full min-w-[980px] border-collapse text-left text-sm">
                   <thead className="bg-cyan-300/[0.06] text-xs uppercase text-cyan-100/70">
                     <tr>

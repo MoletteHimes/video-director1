@@ -356,12 +356,12 @@ export function LibraryClient({ initialItems, type }: { initialItems: KnowledgeI
   }
 
   return (
-    <section>
-      <div className="mb-6 glass-panel rounded-2xl p-5">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+    <section className="mx-auto max-w-[112rem]">
+      <div className="library-hero-panel mb-5 rounded-[1.35rem] p-5 md:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-5">
           <div>
             <p className="text-xs uppercase text-cyan-200/70">Knowledge Library</p>
-            <h1 className="mt-1 text-3xl font-black text-white">{typeLabels[type || ""] || "知识库"}</h1>
+            <h1 className="mt-1 text-4xl font-black text-white">{typeLabels[type || ""] || "知识库"}</h1>
             <p className="mt-2 text-sm text-slate-400">点击封面打开右侧抽屉，查看描述、提示词和适用场景。</p>
           </div>
           <div className="relative w-full max-w-md">
@@ -376,17 +376,17 @@ export function LibraryClient({ initialItems, type }: { initialItems: KnowledgeI
         </div>
       </div>
 
-      <div className="sticky top-4 z-30 mb-6 rounded-2xl border border-cyan-300/14 bg-slate-950/88 p-3 shadow-2xl backdrop-blur-xl">
+      <div className="library-toolbar sticky top-4 z-30 mb-6 rounded-[1.15rem] p-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-2">
             {categories.map((c) => (
               <button
                 key={c}
                 onClick={() => setCategory(c)}
-                className={`rounded-lg px-4 py-2 text-sm transition ${
+                className={`library-filter-chip ${
                   category === c
-                    ? "border border-cyan-300/30 bg-cyan-300/12 text-cyan-100 shadow-neon"
-                    : "muted-button"
+                    ? "library-filter-chip-active"
+                    : ""
                 }`}
               >
                 {c}

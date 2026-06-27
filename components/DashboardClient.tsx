@@ -670,14 +670,14 @@ export function DashboardClient() {
 
   return (
     <div className="space-y-6">
-      <section className="workspace-hero-shell relative isolate flex min-h-[calc(100vh-7rem)] w-full flex-col items-center justify-center overflow-visible px-4 py-12">
+      <section className="workspace-hero-shell relative isolate flex min-h-[calc(100vh-7rem)] w-full flex-col items-center justify-center overflow-visible px-4 py-12 md:py-16">
         <div className="workspace-orb-field fixed inset-0 -z-10" aria-hidden="true">
           {workspaceParticles.map((particle, index) => (
             <span key={index} className="workspace-particle" style={particleStyle(particle)} />
           ))}
         </div>
 
-        <div className="mb-10 flex items-center justify-center gap-4">
+        <div className="mb-9 flex items-center justify-center gap-4">
           <span className="title-planet" aria-hidden="true">
             <span className="title-planet-ring" />
             <span className="title-planet-core" />
@@ -685,20 +685,20 @@ export function DashboardClient() {
             <span className="title-star title-star-two" />
             <span className="title-star title-star-three" />
           </span>
-          <h1 className="bg-gradient-to-r from-violet-200 via-fuchsia-300 to-cyan-200 bg-clip-text text-center text-4xl font-black leading-tight text-transparent md:text-5xl">
+          <h1 className="bg-gradient-to-r from-violet-200 via-fuchsia-300 to-cyan-200 bg-clip-text text-center text-4xl font-black leading-tight text-transparent md:text-6xl">
             超创视频工作站
           </h1>
         </div>
 
-        <div className="workspace-prompt-card w-full max-w-4xl">
+        <div className="workspace-prompt-card w-full max-w-5xl">
           <div className="workspace-prompt-inner">
             <textarea
               value={script}
               onChange={(e) => setScript(e.target.value)}
-              className="min-h-44 w-full resize-none rounded-t-[1.4rem] border-0 bg-transparent px-7 py-6 text-base font-semibold leading-8 text-slate-100 outline-none placeholder:text-slate-500 md:min-h-52"
+              className="min-h-48 w-full resize-none rounded-t-[1.25rem] border-0 bg-transparent px-7 py-7 text-base font-semibold leading-8 text-slate-100 outline-none placeholder:text-slate-500 md:min-h-60 md:px-8"
               placeholder="未来城市的夜晚，霓虹灯闪烁，飞行汽车穿梭在高楼之间..."
             />
-            <div className="workspace-prompt-toolbar flex flex-wrap items-center gap-3 rounded-b-[1.4rem] border-t border-white/[0.08] px-5 py-4">
+            <div className="workspace-prompt-toolbar flex flex-wrap items-center gap-3 rounded-b-[1.25rem] border-t border-white/[0.08] px-5 py-4 md:px-6">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -758,7 +758,7 @@ export function DashboardClient() {
               <button
                 onClick={analyze}
                 disabled={loading || uploadingText || batchGenerating}
-                className="grid h-12 w-12 place-items-center rounded-full border border-violet-200/20 bg-white/[0.18] text-violet-50 shadow-[0_0_18px_rgba(168,85,247,0.22)] transition hover:bg-violet-400/[0.35] disabled:cursor-not-allowed disabled:opacity-60"
+                className="prompt-send-button"
                 aria-label={loading ? "正在生成" : "生成视频提示词"}
                 title={loading ? "正在生成" : "生成视频提示词"}
               >
@@ -769,7 +769,7 @@ export function DashboardClient() {
         </div>
 
         {(uploadingText || loading || batchGenerating || generationProgress) && (
-          <div className="mt-4 flex w-full max-w-4xl items-center gap-3 rounded-xl border border-violet-300/18 bg-violet-500/10 px-4 py-3 text-sm text-violet-50">
+          <div className="mt-4 flex w-full max-w-5xl items-center gap-3 rounded-xl border border-violet-300/18 bg-violet-500/10 px-4 py-3 text-sm text-violet-50">
             {(uploadingText || loading || batchGenerating) && <Loader2 className="h-4 w-4 animate-spin" />}
             <span>{generationProgress || "正在生成..."}</span>
           </div>

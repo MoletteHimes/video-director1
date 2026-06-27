@@ -11,7 +11,7 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
   const knowledgeItems = await getMergedKnowledgeItems();
   const items = type ? knowledgeItems.filter((item) => item.type === type) : knowledgeItems;
   return (
-    <main className="min-h-screen">
+    <main className="library-page-shell min-h-screen">
       <Suspense fallback={null}>
         <Sidebar />
       </Suspense>

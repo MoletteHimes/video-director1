@@ -78,18 +78,24 @@ export function UserAccountNav({ compact = false }: UserAccountNavProps) {
 
   if (!isAuthenticated) {
     return (
-      <div className="flex items-center gap-2">
-        <a href="/login" className="muted-button inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold">
+      <nav className="pointer-events-auto relative z-50 flex items-center gap-2" aria-label="用户账号入口">
+        <a
+          href="/login"
+          className="inline-flex items-center gap-2 rounded-xl border border-cyan-200/18 bg-slate-950/80 px-4 py-2 text-sm font-semibold text-cyan-50 shadow-[0_12px_34px_rgba(0,0,0,0.24)] backdrop-blur-xl transition hover:border-cyan-200/42 hover:bg-slate-900/95 hover:text-white focus:outline-none focus:ring-2 focus:ring-cyan-300/40"
+        >
           <LogIn className="h-4 w-4" />
           登录
         </a>
         {!compact && (
-          <a href="/login?mode=register" className="primary-neon inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold">
+          <a
+            href="/login?mode=register"
+            className="primary-neon inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-cyan-300/45"
+          >
             <UserPlus className="h-4 w-4" />
             注册
           </a>
         )}
-      </div>
+      </nav>
     );
   }
 
